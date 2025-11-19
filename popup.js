@@ -20,6 +20,7 @@ const playIcon = toggleBtn.querySelector('.play-icon');
 const pauseIcon = toggleBtn.querySelector('.pause-icon');
 const landing = document.getElementById('landing');
 const editorView = document.getElementById('editor-view');
+const toolBar = document.getElementById('toolbar');
 const backBtn = document.getElementById('back-btn');
 const saveBtn = document.getElementById('save-btn');
 const reloadBtn = document.getElementById('reload-btn');
@@ -35,6 +36,7 @@ function updateToggleIcon(enabled) {
 function showLanding() {
   landing.classList.add('active');
   editorView.classList.remove('active');
+  toolBar.style.display = 'none';
   backBtn.style.display = 'none';
   saveBtn.style.display = 'none';
   reloadBtn.style.display = 'none';
@@ -44,6 +46,7 @@ function showLanding() {
 function showEditor() {
   landing.classList.remove('active');
   editorView.classList.add('active');
+  toolBar.style.display = 'flex';
   backBtn.style.display = 'flex';
   saveBtn.style.display = 'flex';
   reloadBtn.style.display = 'flex';
@@ -160,7 +163,6 @@ saveBtn.addEventListener('click', () => {
       : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
 
     updateToggleIcon(isEnabled);
-    showLanding();
 
     saveBtn.innerHTML = checkIconHTML;
     setTimeout(() => saveBtn.innerHTML = saveIconHTML, 1500);
@@ -170,6 +172,12 @@ saveBtn.addEventListener('click', () => {
 // Toggle enable/disable
 toggleBtn.addEventListener('click', () => {
   isEnabled = !isEnabled;
+
+  statusText.innerHTML = hasContent
+    ? `Boost is <strong>${isEnabled ? 'active' : 'paused'}</strong> on <strong>${currentHost}</strong>.`
+    : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
+
+
   updateToggleIcon(isEnabled);
 
   const saveObj = {};

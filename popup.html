@@ -13,20 +13,68 @@
       font-family: system-ui, -apple-system, sans-serif;
       overflow: hidden;
       height: auto;
+      min-height: 0;
+      max-height: 100vh;
     }
     body {
       display: flex;
       flex-direction: column;
-      width: 400px !important;
+      width: 500px !important;
       min-height: 700px !important;
+      max-height: none !important;
       box-sizing: border-box;
+      overflow: hidden;
     }
-    @media (max-width: 600px) {
-      body {
-        width: 100vw !important;
-        min-height: 100vh !important;
-      }
+    
+    /* Ensure content areas can scroll if needed */
+    .view {
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: #ccc #f0f2f5;
     }
+    
+    /* Custom scrollbar styling */
+    .view::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .view::-webkit-scrollbar-track {
+      background: #f0f2f5;
+    }
+    
+    .view::-webkit-scrollbar-thumb {
+      background-color: #ccc;
+      border-radius: 3px;
+    }
+    
+    /* Ensure proper content boundaries */
+    .code-editor-wrapper {
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .code-editor textarea,
+    .code-editor pre {
+      max-width: 100%;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    
+    /* Prevent text selection in code preview */
+    .code-editor pre {
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+    }
+    
+    /* Ensure proper focus management */
+    .code-editor textarea:focus {
+      outline: 2px solid #0d6efd;
+      outline-offset: -2px;
+    }
+    
 
     .toolbar {
       height: 56px;
@@ -38,17 +86,6 @@
       flex-shrink: 0;
       position: relative;
       justify-content: space-between;
-    }
-
-    .toolbar-title {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      font-weight: 600;
-      font-size: 18px;
-      pointer-events: none;
-      white-space: nowrap;
     }
 
     .action-button {
@@ -98,22 +135,76 @@
       width: 24px;
       height: 24px;
     }
+    
+    /* Responsive toolbar adjustments */
+    @media (max-width: 600px) {
+      .toolbar {
+        height: 48px;
+        padding: 0 8px;
+      }
+      
+      .toolbar-title {
+        font-size: 16px;
+      }
+      
+      .toolbar button {
+        width: 40px;
+        height: 40px;
+      }
+      
+      .toolbar button svg {
+        width: 20px;
+        height: 20px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .toolbar {
+        height: 44px;
+        padding: 0 6px;
+      }
+      
+      .toolbar-title {
+        font-size: 14px;
+      }
+      
+      .toolbar button {
+        width: 36px;
+        height: 36px;
+      }
+      
+      .toolbar button svg {
+        width: 18px;
+        height: 18px;
+      }
+    }
 
     .tabs {
       display: flex;
       background: #e9ecef;
       border-bottom: 1px solid #ddd;
       flex-shrink: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
+    
+    .tabs::-webkit-scrollbar {
+      display: none;
+    }
+    
     .tab {
       flex: 1;
-      padding: 14px 12px;
+      min-width: 80px;
+      padding: 12px 8px;
       text-align: center;
       background: #dee2e6;
       border: none;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
+      font-size: 14px;
+      white-space: nowrap;
     }
     .tab:hover { background: #ced4da; }
     .tab.active {
@@ -130,12 +221,14 @@
       height: 3px;
       background: #0d6efd;
     }
+    
 
     .view {
       display: none;
       flex: 1;
       flex-direction: column;
       overflow: hidden;
+      min-height: 0;
     }
     .view.active {
       display: flex;
@@ -148,6 +241,7 @@
       text-align: center;
       padding: 40px 20px 60px;
       gap: 24px;
+      overflow-y: auto;
     }
 
     #landing h2 {
@@ -172,11 +266,14 @@
       margin-top: 20px;
     }
 
+
     .code-editor-wrapper {
       flex: 1;
       background: white;
       position: relative;
       overflow: hidden;
+      min-height: 0;
+      max-height: none;
     }
     .code-editor {
       position: absolute;
@@ -189,6 +286,7 @@
       display: none;
     }
     .code-editor.active { display: block; }
+    
 
     .code-editor textarea,
     .code-editor pre {
@@ -225,14 +323,12 @@
 </head>
 <body>
 
-  <div class="toolbar">
+  <div id="toolbar" class="toolbar" style="display:none;">
     <button id="back-btn" style="display:none;" aria-label="Back">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
       </svg>
     </button>
-
-    <span class="toolbar-title">Boost</span>
 
     <button id="save-btn" style="display:none;" aria-label="Save">
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
