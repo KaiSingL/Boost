@@ -7,6 +7,9 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     document.querySelectorAll('.code-editor').forEach(e => e.classList.remove('active'));
     document.getElementById(tab.dataset.target).classList.add('active');
+
+    // New: trigger immediate highlight when switching tabs
+    highlightCurrentEditor();
   });
 });
 
@@ -25,6 +28,18 @@ const backBtn = document.getElementById('back-btn');
 const saveBtn = document.getElementById('save-btn');
 const reloadBtn = document.getElementById('reload-btn');
 const statusText = document.getElementById('status-text');
+
+// Helper: highlight the currently visible editor
+function highlightCurrentEditor() {
+  const activeEditor = document.querySelector('.code-editor.active');
+  if (!activeEditor) return;
+  const textarea = activeEditor.querySelector('textarea');
+  const code = activeEditor.querySelector('code');
+  if (code && textarea) {
+    code.textContent = textarea.value || '';
+    Prism.highlightElement(code);
+  }
+}
 
 function updateToggleIcon(enabled) {
   playIcon.style.display = enabled ? 'none' : 'block';
@@ -51,6 +66,9 @@ function showEditor() {
   saveBtn.style.display = 'flex';
   reloadBtn.style.display = 'flex';
   toggleBtn.style.display = hasContent ? 'flex' : 'none';
+
+  // Critical: highlight immediately when entering editor
+  highlightCurrentEditor();
 }
 
 backBtn.addEventListener('click', showLanding);
@@ -84,6 +102,7 @@ document.querySelectorAll('.code-editor').forEach(editor => {
     }
   });
 
+  // Initial sync for each editor (runs once on load)
   sync();
 });
 
@@ -124,13 +143,8 @@ function loadSiteData() {
       updateToggleIcon(isEnabled);
       showLanding();
 
-      // Safe highlight
-      document.querySelectorAll('.code-editor code').forEach(codeEl => {
-        if (codeEl && codeEl.parentElement) {
-          codeEl.textContent = codeEl.parentElement.querySelector('textarea')?.value || '';
-          Prism.highlightElement(codeEl);
-        }
-      });
+      // Critical: immediately highlight both editors after loading saved code
+      highlightCurrentEditor();
     });
   });
 }
@@ -176,7 +190,6 @@ toggleBtn.addEventListener('click', () => {
   statusText.innerHTML = hasContent
     ? `Boost is <strong>${isEnabled ? 'active' : 'paused'}</strong> on <strong>${currentHost}</strong>.`
     : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
-
 
   updateToggleIcon(isEnabled);
 
