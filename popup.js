@@ -1,5 +1,16 @@
 "use strict";
 
+// Mobile Detection Script - Runs immediately, no layout flash
+(function () {
+  const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+                         (/Macintosh/i.test(navigator.userAgent) && 'ontouchend' in document); // iPadOS
+
+  if (isMobileDevice) {
+    document.documentElement.classList.add('mobile');
+    document.body.classList.add('mobile');
+  }
+})();
+
 // Tab switching
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {

@@ -14,19 +14,57 @@
       overflow: hidden;
     }
     html {
-      overflow: hidden; /* ensure no scrollbar from viewport overflow */
+      overflow: hidden;
     }
+
+    /* Default desktop layout - fixed width */
     body {
       display: flex;
       flex-direction: column;
-      width: 500px !important;
-      height: auto !important; /* ← dynamic height so popup always fits viewport */
-      min-height: 360px !important; /* reasonable minimum for landing */
+      width: 430px !important;
+      height: auto !important;
+      min-height: 360px !important;
       box-sizing: border-box;
       overflow: hidden;
-      transition: height 0.3s ease; /* smooth grow/shrink when switching views */
+      transition: height 0.3s ease;
     }
 
+    /* ─────── Mobile layout ─────── */
+    /* Only applied when .mobile class is added by JS */
+    body.mobile {
+      width: 100vw !important;
+      width: 100dvw !important;     /* future-proof for dynamic viewport units */
+      min-height: 100vh !important;
+      min-height: 100dvh !important;
+      padding: 0 8px !important;    /* small safe area padding */
+    }
+
+    /* Ensure content doesn't overflow horizontally on mobile */
+    body.mobile .toolbar,
+    body.mobile .tabs,
+    body.mobile .code-editor-wrapper,
+    body.mobile .action-button,
+    body.mobile .tab {
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    body.mobile .actions {
+      padding: 0 20px;
+      gap: 20px;
+    }
+
+    body.mobile .action-button {
+      width: 72px;
+      height: 72px;
+    }
+
+    body.mobile .action-button svg {
+      width: 36px;
+      height: 36px;
+    }
+
+    /* Rest of your existing styles (unchanged) */
     .toolbar {
       height: 56px;
       background: white;
@@ -38,6 +76,7 @@
       justify-content: space-between;
     }
 
+    /* ... all your existing styles below remain 100% unchanged ... */
     .action-button {
       width: 64px;
       height: 64px;
@@ -85,7 +124,7 @@
       width: 24px;
       height: 24px;
     }
-
+    
     .tabs {
       display: flex;
       background: #e9ecef;
@@ -95,7 +134,7 @@
       scrollbar-width: none;
       -ms-overflow-style: none;
     }
-    
+
     .tabs::-webkit-scrollbar {
       display: none;
     }
@@ -171,8 +210,8 @@
     }
 
     .code-editor-wrapper {
-      flex: 1 1 0px; /* grow to fill, forces height increase */
-      min-height: 600px; /* forces editor view to be tall → popup grows */
+      flex: 1 1 0px;
+      min-height: 600px;
       background: white;
       position: relative;
       overflow: hidden;
@@ -221,7 +260,7 @@
       pointer-events: none;
       z-index: 1;
       background: white;
-      overflow: hidden; /* only textarea scrolls */
+      overflow: hidden;
     }
 
     .code-editor textarea::-webkit-scrollbar {
@@ -246,6 +285,7 @@
 </head>
 <body>
 
+  <!-- Your existing HTML structure (unchanged) -->
   <div id="toolbar" class="toolbar" style="display:none;">
     <button id="back-btn" style="display:none;" aria-label="Back">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
