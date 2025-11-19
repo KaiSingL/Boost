@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "boost",
+  "name": "Boost",
   "description": "Edit & inject custom JavaScript and CSS per domain - mobile friendly",
   "version": "1.0",
   "icons": {
