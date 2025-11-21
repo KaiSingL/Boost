@@ -40,6 +40,9 @@ const saveBtn = document.getElementById('save-btn');
 const reloadBtn = document.getElementById('reload-btn');
 const statusText = document.getElementById('status-text');
 
+// Constants for chunking
+const CHUNK_SIZE = 7000; // Safe character limit per chunk to stay under 8192 bytes (accounts for JSON overhead)
+
 // Helper: highlight the currently visible editor
 function highlightCurrentEditor() {
   const activeEditor = document.querySelector('.code-editor.active');
@@ -117,6 +120,83 @@ document.querySelectorAll('.code-editor').forEach(editor => {
   sync();
 });
 
+// Function to chunk a string and add to sets object
+function chunkAndSet(baseKey, value, sets) {
+  if (value.length === 0) {
+    sets[`${baseKey}_chunks`] = 0;
+    return;
+  }
+
+  const chunks = [];
+  for (let i = 0; i < value.length; i += CHUNK_SIZE) {
+    chunks.push(value.substring(i, i + CHUNK_SIZE));
+  }
+
+  sets[`${baseKey}_chunks`] = chunks.length;
+  chunks.forEach((chunk, i) => {
+    sets[`${baseKey}_${i}`] = chunk;
+  });
+}
+
+// Function to save data in split/chunked format
+function saveData(host, data, cb) {
+  const sets = {};
+  sets[`${host}_enabled`] = data.enabled;
+  chunkAndSet(`${host}_js`, data.js, sets);
+  chunkAndSet(`${host}_css`, data.css, sets);
+  chrome.storage.sync.set(sets, cb);
+}
+
+// Function to load a chunked field
+function loadField(baseKey, cb) {
+  chrome.storage.sync.get(`${baseKey}_chunks`, items => {
+    const numChunks = items[`${baseKey}_chunks`] || 0;
+    if (numChunks === 0) {
+      cb('');
+      return;
+    }
+
+    const chunkKeys = [];
+    for (let i = 0; i < numChunks; i++) {
+      chunkKeys.push(`${baseKey}_${i}`);
+    }
+
+    chrome.storage.sync.get(chunkKeys, ch => {
+      let value = '';
+      for (let i = 0; i < numChunks; i++) {
+        value += ch[`${baseKey}_${i}`] || '';
+      }
+      cb(value);
+    });
+  });
+}
+
+// Function to load site data (with migration from old format)
+function loadData(host, callback) {
+  chrome.storage.sync.get(host, items => {
+    if (items[host]) {
+      // Old single-key format found: migrate to split/chunked
+      const oldData = items[host];
+      saveData(host, oldData, () => {
+        chrome.storage.sync.remove(host, () => {
+          callback(oldData);
+        });
+      });
+      return;
+    }
+
+    // Load from split format
+    chrome.storage.sync.get(`${host}_enabled`, en => {
+      const enabled = en[`${host}_enabled`] === true;
+      loadField(`${host}_js`, js => {
+        loadField(`${host}_css`, css => {
+          callback({ js, css, enabled });
+        });
+      });
+    });
+  });
+}
+
 // Load data for current domain
 function loadSiteData() {
   chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
@@ -135,9 +215,7 @@ function loadSiteData() {
       currentHost = 'this site';
     }
 
-    chrome.storage.sync.get([currentHost], (items) => {
-      const data = items[currentHost] || { js: '', css: '', enabled: false };
-
+    loadData(currentHost, (data) => {
       const jsTextarea = document.querySelector('#js-editor textarea');
       const cssTextarea = document.querySelector('#css-editor textarea');
 
@@ -176,10 +254,7 @@ saveBtn.addEventListener('click', () => {
   const newHasContent = jsCode.trim().length > 0 || cssCode.trim().length > 0;
   const newEnabled = newHasContent ? isEnabled : false;
 
-  const saveObj = {};
-  saveObj[currentHost] = { js: jsCode, css: cssCode, enabled: newEnabled };
-
-  chrome.storage.sync.set(saveObj, () => {
+  saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, () => {
     hasContent = newHasContent;
     isEnabled = newEnabled;
 
@@ -204,11 +279,11 @@ toggleBtn.addEventListener('click', () => {
 
   updateToggleIcon(isEnabled);
 
-  const saveObj = {};
-  chrome.storage.sync.get([currentHost], (items) => {
-    saveObj[currentHost] = { ...items[currentHost], enabled: isEnabled };
-    chrome.storage.sync.set(saveObj);
-  });
+  // Pull current JS/CSS from textareas and save full data (simple and consistent)
+  const jsCode = document.querySelector('#js-editor textarea').value;
+  const cssCode = document.querySelector('#css-editor textarea').value;
+
+  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, () => {});
 
   chrome.tabs.reload(currentTabId);
 });

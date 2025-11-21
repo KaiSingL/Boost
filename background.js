@@ -1,8 +1,6 @@
 "use strict";
 
 async function injectBoost(tabId, frameId, jsCode = '', cssCode = '', hostname = 'unknown') {
-  if (frameId !== 0) return;
-
   const target = { tabId, frameIds: [frameId] };
   const tasks = [];
 
@@ -39,17 +37,57 @@ async function injectBoost(tabId, frameId, jsCode = '', cssCode = '', hostname =
   console.log(`%cBoost 🚀 Injection complete on ${hostname}`, 'background: #0d6efd; color: white; font-weight: bold; padding: 5px 10px; border-radius: 6px;');
 }
 
-chrome.webNavigation.onCommitted.addListener((details) => {
+async function loadCode(baseKey) {
+  const countKey = `${baseKey}_chunks`;
+  const { [countKey]: count = 0 } = await chrome.storage.sync.get(countKey);
+
+  if (count === 0) return '';
+
+  const keys = Array.from({ length: count }, (_, i) => `${baseKey}_${i}`);
+  const chunks = await chrome.storage.sync.get(keys);
+
+  return keys.reduce((acc, key) => acc + (chunks[key] ?? ''), '');
+}
+
+chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (details.frameId !== 0) return;
   if (!details.url?.startsWith('http')) return;
 
   let hostname;
-  try { hostname = new URL(details.url).hostname; } catch { return; }
+  try {
+    hostname = new URL(details.url).hostname;
+  } catch (e) {
+    return;
+  }
 
-  chrome.storage.sync.get([hostname], (result) => {
-    const data = result[hostname] || { js: '', css: '', enabled: false };
-    if (!data.enabled || (!data.js?.trim() && !data.css?.trim())) return;
+  const enabledKey = `${hostname}_enabled`;
+  const enabledRes = await chrome.storage.sync.get(enabledKey);
 
-    injectBoost(details.tabId, details.frameId, data.js, data.css, hostname);
-  });
+  let jsCode = '';
+  let cssCode = '';
+  let enabled = false;
+
+  if (enabledKey in enabledRes) {
+    // New chunked format
+    enabled = enabledRes[enabledKey] === true;
+
+    if (enabled) {
+      jsCode = await loadCode(`${hostname}_js`);
+      cssCode = await loadCode(`${hostname}_css`);
+    }
+  } else {
+    // Fallback to old single-object format
+    const oldRes = await chrome.storage.sync.get([hostname]);
+    const oldData = oldRes[hostname];
+
+    if (oldData?.enabled) {
+      enabled = true;
+      jsCode = oldData.js || '';
+      cssCode = oldData.css || '';
+    }
+  }
+
+  if (!enabled || (!jsCode.trim() && !cssCode.trim())) return;
+
+  await injectBoost(details.tabId, details.frameId, jsCode, cssCode, hostname);
 });
