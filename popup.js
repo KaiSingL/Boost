@@ -210,7 +210,33 @@ toggleBtn.addEventListener('click', () => {
     chrome.storage.sync.set(saveObj);
   });
 
-  chrome.tabs.reload(currentTabId);
+  if (isEnabled) {
+    // Inject code using the new CSP-compatible method
+    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+      const tab = tabs[0];
+      if (tab && tab.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'executeCode',
+          jsCode: document.querySelector('#js-editor textarea')?.value || '',
+          cssCode: document.querySelector('#css-editor textarea')?.value || ''
+        });
+      }
+    });
+  } else {
+    chrome.tabs.reload(currentTabId);
+  }
+});
+
+// Listen for injection status messages from content script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'injectionSuccess') {
+    console.log(`%cBoost: Injection successful on ${request.hostname}`, 'color: #51cf66; font-weight: bold;');
+    statusText.innerHTML = `Boost is <strong>active</strong> on <strong>${request.hostname}</strong>. <em style="color: #51cf66;">✓ CSP-compatible injection</em>`;
+  } else if (request.action === 'injectionFailed') {
+    console.error(`%cBoost: Injection failed on ${request.hostname}`, 'color: #ff6b6b; font-weight: bold;');
+    const cspInfo = request.csp.hasCSP ? ' (CSP detected)' : ' (No CSP)';
+    statusText.innerHTML = `Boost <strong>failed</strong> on <strong>${request.hostname}</strong>${cspInfo}. <em style="color: #ff6b6b;">Check console for details</em>`;
+  }
 });
 
 // Reload page button
