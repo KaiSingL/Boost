@@ -1,5 +1,28 @@
 "use strict";
 
+const isMobileDevice = /Android|iPhone|iPad|iPod|Macintosh.*(iPhone|iPad)/i.test(navigator.userAgent);
+
+const MAX_LOGS = 500;
+
+// Centralized log function
+async function log(source, message) {
+  try {
+    const { boost_logs: logs = [] } = await chrome.storage.local.get('boost_logs');
+    logs.push({ timestamp: new Date().toISOString(), source, message });
+    if (logs.length > MAX_LOGS) logs.shift();
+    await chrome.storage.local.set({ boost_logs: logs });
+  } catch (e) {
+    console.error(`Background log failed: ${e}`);
+  }
+}
+
+// Helper for styled console logs while capturing plain message
+function styledLog(...args) {
+  console.log(...args); // Preserve original styled output
+  const message = args.slice(1).join(' '); // Strip style arg
+  log('background', message);
+}
+
 async function injectBoost(tabId, frameId, jsCode = '', cssCode = '', hostname = 'unknown') {
   const target = { tabId, frameIds: [frameId] };
   const tasks = [];
@@ -7,7 +30,7 @@ async function injectBoost(tabId, frameId, jsCode = '', cssCode = '', hostname =
   if (cssCode.trim()) {
     tasks.push(
       chrome.scripting.insertCSS({ target, css: cssCode })
-        .then(() => console.log(`%cBoost ✅ CSS injected (full CSP bypass) on ${hostname}`, 'color: #0d6efd; font-weight: bold;'))
+        .then(() => styledLog(`%cBoost ✅ CSS injected (full CSP bypass) on ${hostname}`, 'color: #0d6efd; font-weight: bold;'))
         .catch(err => console.error(`%cBoost ❌ CSS injection failed on ${hostname}`, 'color: red;', err))
     );
   }
@@ -25,7 +48,7 @@ async function injectBoost(tabId, frameId, jsCode = '', cssCode = '', hostname =
             (document.head || document.documentElement).appendChild(script);
             console.log(`%cBoost ✅ JS injected (main world) on ${host}`, 'color: #0d6efd; font-weight: bold;');
           } catch (e) {
-            console.error("%cBoost ❌ JS injection failed on", host, e);
+            console.error("%cBoost ❌ JS injection failed on", 'color: red;', host, e);
           }
         },
         args: [jsCode, hostname]
@@ -34,7 +57,7 @@ async function injectBoost(tabId, frameId, jsCode = '', cssCode = '', hostname =
   }
 
   await Promise.all(tasks);
-  console.log(`%cBoost 🚀 Injection complete on ${hostname}`, 'background: #0d6efd; color: white; font-weight: bold; padding: 5px 10px; border-radius: 6px;');
+  styledLog(`%cBoost 🚀 Injection complete on ${hostname}`, 'background: #0d6efd; color: white; font-weight: bold; padding: 5px 10px; border-radius: 6px;');
 }
 
 async function loadCode(baseKey) {
@@ -49,9 +72,19 @@ async function loadCode(baseKey) {
   return keys.reduce((acc, key) => acc + (chunks[key] ?? ''), '');
 }
 
+// Listen for log messages from content.js
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'log') {
+    log(request.source, request.message);
+    sendResponse({ success: true });
+  }
+  return true; // Keep message channel open for async
+});
+
 chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (details.frameId !== 0) return;
   if (!details.url?.startsWith('http')) return;
+  if (isMobileDevice) return;
 
   let hostname;
   try {

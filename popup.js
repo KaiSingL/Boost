@@ -9,6 +9,9 @@
     document.documentElement.classList.add('mobile');
     document.body.classList.add('mobile');
   }
+
+  // Expose for use in functions
+  window.isMobileDevice = isMobileDevice;
 })();
 
 // Tab switching
@@ -28,20 +31,27 @@ let currentHost = null;
 let currentTabId = null;
 let isEnabled = false;
 let hasContent = false;
+let currentView = 'landing'; // Track current view: 'landing', 'editor', 'log'
 
 const toggleBtn = document.getElementById('toggle-btn');
 const playIcon = toggleBtn.querySelector('.play-icon');
 const pauseIcon = toggleBtn.querySelector('.pause-icon');
 const landing = document.getElementById('landing');
 const editorView = document.getElementById('editor-view');
+const logView = document.getElementById('log-view');
 const toolBar = document.getElementById('toolbar');
 const backBtn = document.getElementById('back-btn');
 const saveBtn = document.getElementById('save-btn');
 const reloadBtn = document.getElementById('reload-btn');
+const clearBtn = document.getElementById('clear-btn');
 const statusText = document.getElementById('status-text');
+const logPre = document.getElementById('log-pre');
+const logBtn = document.getElementById('log-btn');
 
-// Constants for chunking
+// Constants for chunking (desktop only)
 const CHUNK_SIZE = 7000; // Safe character limit per chunk to stay under 8192 bytes (accounts for JSON overhead)
+const MAX_LOGS = 500; // Max logs to store
+const DISPLAY_LOGS = 100; // Last N to display
 
 // Helper: highlight the currently visible editor
 function highlightCurrentEditor() {
@@ -65,28 +75,56 @@ function updateToggleIcon(enabled) {
 function showLanding() {
   landing.classList.add('active');
   editorView.classList.remove('active');
+  logView.classList.remove('active');
   toolBar.style.display = 'none';
   backBtn.style.display = 'none';
   saveBtn.style.display = 'none';
   reloadBtn.style.display = 'none';
+  clearBtn.style.display = 'none';
   toggleBtn.style.display = hasContent ? 'flex' : 'none';
+  currentView = 'landing';
 }
 
 function showEditor() {
   landing.classList.remove('active');
   editorView.classList.add('active');
+  logView.classList.remove('active');
   toolBar.style.display = 'flex';
   backBtn.style.display = 'flex';
   saveBtn.style.display = 'flex';
   reloadBtn.style.display = 'flex';
+  clearBtn.style.display = 'none';
   toggleBtn.style.display = hasContent ? 'flex' : 'none';
 
   // Critical: highlight immediately when entering editor
   highlightCurrentEditor();
+  currentView = 'editor';
 }
 
-backBtn.addEventListener('click', showLanding);
+function showLog() {
+  landing.classList.remove('active');
+  editorView.classList.remove('active');
+  logView.classList.add('active');
+  toolBar.style.display = 'flex';
+  backBtn.style.display = 'flex';
+  clearBtn.style.display = 'flex';
+  saveBtn.style.display = 'none';
+  reloadBtn.style.display = 'none';
+  toggleBtn.style.display = 'none';
+
+  loadLogs();
+  logPre.scrollTop = logPre.scrollHeight; // Auto-scroll to bottom
+  currentView = 'log';
+}
+
+backBtn.addEventListener('click', () => {
+  if (currentView === 'editor') showLanding();
+  if (currentView === 'log') showLanding();
+});
+
 document.getElementById('edit-btn').addEventListener('click', showEditor);
+logBtn.addEventListener('click', showLog);
+clearBtn.addEventListener('click', clearLogs);
 
 // Editors sync & Tab key support
 document.querySelectorAll('.code-editor').forEach(editor => {
@@ -120,7 +158,7 @@ document.querySelectorAll('.code-editor').forEach(editor => {
   sync();
 });
 
-// Function to chunk a string and add to sets object
+// Function to chunk a string and add to sets object (desktop only)
 function chunkAndSet(baseKey, value, sets) {
   if (value.length === 0) {
     sets[`${baseKey}_chunks`] = 0;
@@ -138,16 +176,34 @@ function chunkAndSet(baseKey, value, sets) {
   });
 }
 
-// Function to save data in split/chunked format
+// Function to save data: simple on mobile, chunked on desktop
 function saveData(host, data, cb) {
-  const sets = {};
-  sets[`${host}_enabled`] = data.enabled;
-  chunkAndSet(`${host}_js`, data.js, sets);
-  chunkAndSet(`${host}_css`, data.css, sets);
-  chrome.storage.sync.set(sets, cb);
+  const mobile = window.isMobileDevice;
+  log('popup', `SAVE: Starting save for ${host} (mobile: ${mobile})`);
+
+  if (mobile) {
+    // Simple old format for mobile/Orion compatibility
+    if ((data.js || '').length + (data.css || '').length > 100000) {
+      log('popup', 'SAVE: Data too large for mobile simple format (>100KB), consider desktop');
+    }
+    chrome.storage.sync.set({ [host]: data }, () => {
+      log('popup', `SAVE: Simple save complete for ${host}`);
+      if (cb) cb();
+    });
+  } else {
+    // Chunked format for desktop
+    const sets = {};
+    sets[`${host}_enabled`] = data.enabled;
+    chunkAndSet(`${host}_js`, data.js, sets);
+    chunkAndSet(`${host}_css`, data.css, sets);
+    chrome.storage.sync.set(sets, () => {
+      log('popup', `SAVE: Chunked save complete for ${host}`);
+      if (cb) cb();
+    });
+  }
 }
 
-// Function to load a chunked field
+// Function to load a chunked field (desktop fallback)
 function loadField(baseKey, cb) {
   chrome.storage.sync.get(`${baseKey}_chunks`, items => {
     const numChunks = items[`${baseKey}_chunks`] || 0;
@@ -171,29 +227,73 @@ function loadField(baseKey, cb) {
   });
 }
 
-// Function to load site data (with migration from old format)
+// Function to load site data (with mobile-aware migration)
 function loadData(host, callback) {
+  const mobile = window.isMobileDevice;
+  log('popup', `LOAD: Starting load for ${host} (mobile: ${mobile})`);
+
   chrome.storage.sync.get(host, items => {
     if (items[host]) {
-      // Old single-key format found: migrate to split/chunked
+      // Old single-key format found
       const oldData = items[host];
+      if (mobile) {
+        // On mobile: no migration, use directly
+        log('popup', `LOAD: Using old format directly (mobile) for ${host}`);
+        callback(oldData);
+        return;
+      }
+      // Desktop: migrate to split/chunked
+      log('popup', `LOAD: Migrating old format for ${host}`);
       saveData(host, oldData, () => {
         chrome.storage.sync.remove(host, () => {
-          callback(oldData);
+          log('popup', `LOAD: Migration complete for ${host}`);
+          callback(oldData); // Use old data for now; next load will be chunked
         });
       });
       return;
     }
 
-    // Load from split format
+    // No old format: load from split/chunked (or default)
+    log('popup', `LOAD: Loading chunked format for ${host}`);
     chrome.storage.sync.get(`${host}_enabled`, en => {
       const enabled = en[`${host}_enabled`] === true;
       loadField(`${host}_js`, js => {
         loadField(`${host}_css`, css => {
-          callback({ js, css, enabled });
+          const data = { js, css, enabled };
+          log('popup', `LOAD: Chunked data loaded for ${host} (js:${js.length}, css:${css.length})`);
+          callback(data);
         });
       });
     });
+  });
+}
+
+// Centralized log function for popup
+async function log(source, message) {
+  try {
+    const { boost_logs: logs = [] } = await chrome.storage.local.get('boost_logs');
+    logs.push({ timestamp: new Date().toISOString(), source, message });
+    if (logs.length > MAX_LOGS) logs.shift();
+    await chrome.storage.local.set({ boost_logs: logs });
+    console.log(`[${source}] ${message}`); // Plain console for popup
+  } catch (e) {
+    console.error(`Log failed: ${e}`);
+  }
+}
+
+// Load and display logs
+function loadLogs() {
+  chrome.storage.local.get('boost_logs', ({ boost_logs: logs = [] }) => {
+    const recent = logs.slice(-DISPLAY_LOGS).map(l => `[${new Date(l.timestamp).toLocaleString()}] ${l.source}: ${l.message}`).join('\n');
+    logPre.textContent = recent || 'No logs yet. Perform actions to generate logs.';
+  });
+}
+
+// Clear logs
+function clearLogs() {
+  chrome.storage.local.set({ boost_logs: [] }, () => {
+    logPre.textContent = 'Logs cleared.';
+    log('popup', 'Cleared all logs');
   });
 }
 
