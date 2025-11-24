@@ -48,10 +48,34 @@ const statusText = document.getElementById('status-text');
 const logPre = document.getElementById('log-pre');
 const logBtn = document.getElementById('log-btn');
 
-// Constants for chunking (desktop only)
+// Constants for chunking
 const CHUNK_SIZE = 7000; // Safe character limit per chunk to stay under 8192 bytes (accounts for JSON overhead)
 const MAX_LOGS = 500; // Max logs to store
 const DISPLAY_LOGS = 100; // Last N to display
+
+// Helpers for base64 encoding/decoding to avoid escaping issues
+function encodeScript(script) {
+  try {
+    return btoa(unescape(encodeURIComponent(script))); // Handle UTF-8 properly
+  } catch (e) {
+    console.error('Encode failed:', e);
+    return btoa(script); // Fallback
+  }
+}
+
+function decodeScript(encoded) {
+  try {
+    return decodeURIComponent(escape(atob(encoded)));
+  } catch (e) {
+    console.warn('Decode failed, using raw (possible corruption):', e);
+    try {
+      return atob(encoded);
+    } catch (e2) {
+      console.error('Raw decode failed:', e2);
+      return encoded; // Ultimate fallback
+    }
+  }
+}
 
 // Helper: highlight the currently visible editor
 function highlightCurrentEditor() {
@@ -158,7 +182,7 @@ document.querySelectorAll('.code-editor').forEach(editor => {
   sync();
 });
 
-// Function to chunk a string and add to sets object (desktop only)
+// Function to chunk a string and add to sets object
 function chunkAndSet(baseKey, value, sets) {
   if (value.length === 0) {
     sets[`${baseKey}_chunks`] = 0;
@@ -176,34 +200,31 @@ function chunkAndSet(baseKey, value, sets) {
   });
 }
 
-// Function to save data: simple on mobile, chunked on desktop
+// Function to save data in chunked format (unified across platforms, with base64)
 function saveData(host, data, cb) {
-  const mobile = window.isMobileDevice;
-  log('popup', `SAVE: Starting save for ${host} (mobile: ${mobile})`);
+  const totalSize = (data.js || '').length + (data.css || '').length;
+  log('popup', `SAVE: Starting chunked save for ${host} (raw size: ${totalSize} chars)`);
 
-  if (mobile) {
-    // Simple old format for mobile/Orion compatibility
-    if ((data.js || '').length + (data.css || '').length > 100000) {
-      log('popup', 'SAVE: Data too large for mobile simple format (>100KB), consider desktop');
-    }
-    chrome.storage.sync.set({ [host]: data }, () => {
-      log('popup', `SAVE: Simple save complete for ${host}`);
-      if (cb) cb();
-    });
-  } else {
-    // Chunked format for desktop
-    const sets = {};
-    sets[`${host}_enabled`] = data.enabled;
-    chunkAndSet(`${host}_js`, data.js, sets);
-    chunkAndSet(`${host}_css`, data.css, sets);
-    chrome.storage.sync.set(sets, () => {
-      log('popup', `SAVE: Chunked save complete for ${host}`);
-      if (cb) cb();
-    });
+  const encodedJs = encodeScript(data.js || '');
+  const encodedCss = encodeScript(data.css || '');
+  log('popup', `SAVE: Encoded JS (${encodedJs.length} chars), CSS (${encodedCss.length} chars)`);
+
+  const sets = {};
+  sets[`${host}_enabled`] = data.enabled;
+  chunkAndSet(`${host}_js`, encodedJs, sets);
+  chunkAndSet(`${host}_css`, encodedCss, sets);
+
+  if (totalSize > 100000) {
+    log('popup', 'SAVE: Large script detected (>100KB) - using chunks + base64 for unlimited sync');
   }
+
+  chrome.storage.sync.set(sets, () => {
+    log('popup', `SAVE: Chunked save complete for ${host}`);
+    if (cb) cb();
+  });
 }
 
-// Function to load a chunked field (desktop fallback)
+// Function to load a chunked field (raw encoded string)
 function loadField(baseKey, cb) {
   chrome.storage.sync.get(`${baseKey}_chunks`, items => {
     const numChunks = items[`${baseKey}_chunks`] || 0;
@@ -227,40 +248,34 @@ function loadField(baseKey, cb) {
   });
 }
 
-// Function to load site data (with mobile-aware migration)
+// Function to load site data (with migration from old format to chunks + base64)
 function loadData(host, callback) {
-  const mobile = window.isMobileDevice;
-  log('popup', `LOAD: Starting load for ${host} (mobile: ${mobile})`);
+  log('popup', `LOAD: Starting load for ${host}`);
 
   chrome.storage.sync.get(host, items => {
     if (items[host]) {
-      // Old single-key format found
+      // Old single-key format found: migrate to chunked + encoded
       const oldData = items[host];
-      if (mobile) {
-        // On mobile: no migration, use directly
-        log('popup', `LOAD: Using old format directly (mobile) for ${host}`);
-        callback(oldData);
-        return;
-      }
-      // Desktop: migrate to split/chunked
-      log('popup', `LOAD: Migrating old format for ${host}`);
+      log('popup', `LOAD: Old format found, migrating to chunks + base64 for ${host}`);
       saveData(host, oldData, () => {
         chrome.storage.sync.remove(host, () => {
           log('popup', `LOAD: Migration complete for ${host}`);
-          callback(oldData); // Use old data for now; next load will be chunked
+          callback(oldData); // Use old data for immediate load; next will be decoded chunks
         });
       });
       return;
     }
 
-    // No old format: load from split/chunked (or default)
+    // Load from chunked format (encoded)
     log('popup', `LOAD: Loading chunked format for ${host}`);
     chrome.storage.sync.get(`${host}_enabled`, en => {
       const enabled = en[`${host}_enabled`] === true;
-      loadField(`${host}_js`, js => {
-        loadField(`${host}_css`, css => {
+      loadField(`${host}_js`, encodedJs => {
+        const js = decodeScript(encodedJs);
+        loadField(`${host}_css`, encodedCss => {
+          const css = decodeScript(encodedCss);
           const data = { js, css, enabled };
-          log('popup', `LOAD: Chunked data loaded for ${host} (js:${js.length}, css:${css.length})`);
+          log('popup', `LOAD: Chunked + decoded data loaded for ${host} (js:${js.length}, css:${css.length})`);
           callback(data);
         });
       });

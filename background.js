@@ -23,6 +23,21 @@ function styledLog(...args) {
   log('background', message);
 }
 
+// Helpers for base64 encoding/decoding to avoid escaping issues
+function decodeScript(encoded) {
+  try {
+    return decodeURIComponent(escape(atob(encoded)));
+  } catch (e) {
+    console.warn('Decode failed, using raw (possible corruption):', e);
+    try {
+      return atob(encoded);
+    } catch (e2) {
+      console.error('Raw decode failed:', e2);
+      return encoded; // Ultimate fallback
+    }
+  }
+}
+
 async function injectBoost(tabId, frameId, jsCode = '', cssCode = '', hostname = 'unknown') {
   const target = { tabId, frameIds: [frameId] };
   const tasks = [];
@@ -69,7 +84,10 @@ async function loadCode(baseKey) {
   const keys = Array.from({ length: count }, (_, i) => `${baseKey}_${i}`);
   const chunks = await chrome.storage.sync.get(keys);
 
-  return keys.reduce((acc, key) => acc + (chunks[key] ?? ''), '');
+  let encoded = keys.reduce((acc, key) => acc + (chunks[key] ?? ''), '');
+  const decoded = decodeScript(encoded);
+  log('background', `LOAD: Decoded ${baseKey} (${decoded.length} chars) from ${count} chunks`);
+  return decoded;
 }
 
 // Listen for log messages from content.js
@@ -93,6 +111,8 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
     return;
   }
 
+  log('background', `Injection check for ${hostname} (enabled key: ${hostname}_enabled)`);
+
   const enabledKey = `${hostname}_enabled`;
   const enabledRes = await chrome.storage.sync.get(enabledKey);
 
@@ -107,6 +127,7 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
     if (enabled) {
       jsCode = await loadCode(`${hostname}_js`);
       cssCode = await loadCode(`${hostname}_css`);
+      log('background', `Loaded enabled chunks: JS ${jsCode.length}, CSS ${cssCode.length} chars`);
     }
   } else {
     // Fallback to old single-object format
@@ -117,10 +138,14 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
       enabled = true;
       jsCode = oldData.js || '';
       cssCode = oldData.css || '';
+      log('background', `Loaded old format: JS ${jsCode.length}, CSS ${cssCode.length} chars`);
     }
   }
 
-  if (!enabled || (!jsCode.trim() && !cssCode.trim())) return;
+  if (!enabled || (!jsCode.trim() && !cssCode.trim())) {
+    log('background', `Skipping injection: disabled or empty for ${hostname}`);
+    return;
+  }
 
   await injectBoost(details.tabId, details.frameId, jsCode, cssCode, hostname);
 });
