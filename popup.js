@@ -9,6 +9,9 @@
     document.documentElement.classList.add('mobile');
     document.body.classList.add('mobile');
   }
+
+  // Expose for use in functions
+  window.isMobileDevice = isMobileDevice;
 })();
 
 // Tab switching
@@ -28,17 +31,51 @@ let currentHost = null;
 let currentTabId = null;
 let isEnabled = false;
 let hasContent = false;
+let currentView = 'landing'; // Track current view: 'landing', 'editor', 'log'
 
 const toggleBtn = document.getElementById('toggle-btn');
 const playIcon = toggleBtn.querySelector('.play-icon');
 const pauseIcon = toggleBtn.querySelector('.pause-icon');
 const landing = document.getElementById('landing');
 const editorView = document.getElementById('editor-view');
+const logView = document.getElementById('log-view');
 const toolBar = document.getElementById('toolbar');
 const backBtn = document.getElementById('back-btn');
 const saveBtn = document.getElementById('save-btn');
 const reloadBtn = document.getElementById('reload-btn');
+const clearBtn = document.getElementById('clear-btn');
 const statusText = document.getElementById('status-text');
+const logPre = document.getElementById('log-pre');
+const logBtn = document.getElementById('log-btn');
+
+// Constants for chunking
+const CHUNK_SIZE = 7000; // Safe character limit per chunk to stay under 8192 bytes (accounts for JSON overhead)
+const MAX_LOGS = 500; // Max logs to store
+const DISPLAY_LOGS = 100; // Last N to display
+
+// Helpers for base64 encoding/decoding to avoid escaping issues
+function encodeScript(script) {
+  try {
+    return btoa(unescape(encodeURIComponent(script))); // Handle UTF-8 properly
+  } catch (e) {
+    console.error('Encode failed:', e);
+    return btoa(script); // Fallback
+  }
+}
+
+function decodeScript(encoded) {
+  try {
+    return decodeURIComponent(escape(atob(encoded)));
+  } catch (e) {
+    console.warn('Decode failed, using raw (possible corruption):', e);
+    try {
+      return atob(encoded);
+    } catch (e2) {
+      console.error('Raw decode failed:', e2);
+      return encoded; // Ultimate fallback
+    }
+  }
+}
 
 // Helper: highlight the currently visible editor
 function highlightCurrentEditor() {
@@ -62,28 +99,56 @@ function updateToggleIcon(enabled) {
 function showLanding() {
   landing.classList.add('active');
   editorView.classList.remove('active');
+  logView.classList.remove('active');
   toolBar.style.display = 'none';
   backBtn.style.display = 'none';
   saveBtn.style.display = 'none';
   reloadBtn.style.display = 'none';
+  clearBtn.style.display = 'none';
   toggleBtn.style.display = hasContent ? 'flex' : 'none';
+  currentView = 'landing';
 }
 
 function showEditor() {
   landing.classList.remove('active');
   editorView.classList.add('active');
+  logView.classList.remove('active');
   toolBar.style.display = 'flex';
   backBtn.style.display = 'flex';
   saveBtn.style.display = 'flex';
   reloadBtn.style.display = 'flex';
+  clearBtn.style.display = 'none';
   toggleBtn.style.display = hasContent ? 'flex' : 'none';
 
   // Critical: highlight immediately when entering editor
   highlightCurrentEditor();
+  currentView = 'editor';
 }
 
-backBtn.addEventListener('click', showLanding);
+function showLog() {
+  landing.classList.remove('active');
+  editorView.classList.remove('active');
+  logView.classList.add('active');
+  toolBar.style.display = 'flex';
+  backBtn.style.display = 'flex';
+  clearBtn.style.display = 'flex';
+  saveBtn.style.display = 'none';
+  reloadBtn.style.display = 'none';
+  toggleBtn.style.display = 'none';
+
+  loadLogs();
+  logPre.scrollTop = logPre.scrollHeight; // Auto-scroll to bottom
+  currentView = 'log';
+}
+
+backBtn.addEventListener('click', () => {
+  if (currentView === 'editor') showLanding();
+  if (currentView === 'log') showLanding();
+});
+
 document.getElementById('edit-btn').addEventListener('click', showEditor);
+logBtn.addEventListener('click', showLog);
+clearBtn.addEventListener('click', clearLogs);
 
 // Editors sync & Tab key support
 document.querySelectorAll('.code-editor').forEach(editor => {
@@ -117,6 +182,136 @@ document.querySelectorAll('.code-editor').forEach(editor => {
   sync();
 });
 
+// Function to chunk a string and add to sets object
+function chunkAndSet(baseKey, value, sets) {
+  if (value.length === 0) {
+    sets[`${baseKey}_chunks`] = 0;
+    return;
+  }
+
+  const chunks = [];
+  for (let i = 0; i < value.length; i += CHUNK_SIZE) {
+    chunks.push(value.substring(i, i + CHUNK_SIZE));
+  }
+
+  sets[`${baseKey}_chunks`] = chunks.length;
+  chunks.forEach((chunk, i) => {
+    sets[`${baseKey}_${i}`] = chunk;
+  });
+}
+
+// Function to save data in chunked format (unified across platforms, with base64)
+function saveData(host, data, cb) {
+  const totalSize = (data.js || '').length + (data.css || '').length;
+  log('popup', `SAVE: Starting chunked save for ${host} (raw size: ${totalSize} chars)`);
+
+  const encodedJs = encodeScript(data.js || '');
+  const encodedCss = encodeScript(data.css || '');
+  log('popup', `SAVE: Encoded JS (${encodedJs.length} chars), CSS (${encodedCss.length} chars)`);
+
+  const sets = {};
+  sets[`${host}_enabled`] = data.enabled;
+  chunkAndSet(`${host}_js`, encodedJs, sets);
+  chunkAndSet(`${host}_css`, encodedCss, sets);
+
+  if (totalSize > 100000) {
+    log('popup', 'SAVE: Large script detected (>100KB) - using chunks + base64 for unlimited sync');
+  }
+
+  chrome.storage.sync.set(sets, () => {
+    log('popup', `SAVE: Chunked save complete for ${host}`);
+    if (cb) cb();
+  });
+}
+
+// Function to load a chunked field (raw encoded string)
+function loadField(baseKey, cb) {
+  chrome.storage.sync.get(`${baseKey}_chunks`, items => {
+    const numChunks = items[`${baseKey}_chunks`] || 0;
+    if (numChunks === 0) {
+      cb('');
+      return;
+    }
+
+    const chunkKeys = [];
+    for (let i = 0; i < numChunks; i++) {
+      chunkKeys.push(`${baseKey}_${i}`);
+    }
+
+    chrome.storage.sync.get(chunkKeys, ch => {
+      let value = '';
+      for (let i = 0; i < numChunks; i++) {
+        value += ch[`${baseKey}_${i}`] || '';
+      }
+      cb(value);
+    });
+  });
+}
+
+// Function to load site data (with migration from old format to chunks + base64)
+function loadData(host, callback) {
+  log('popup', `LOAD: Starting load for ${host}`);
+
+  chrome.storage.sync.get(host, items => {
+    if (items[host]) {
+      // Old single-key format found: migrate to chunked + encoded
+      const oldData = items[host];
+      log('popup', `LOAD: Old format found, migrating to chunks + base64 for ${host}`);
+      saveData(host, oldData, () => {
+        chrome.storage.sync.remove(host, () => {
+          log('popup', `LOAD: Migration complete for ${host}`);
+          callback(oldData); // Use old data for immediate load; next will be decoded chunks
+        });
+      });
+      return;
+    }
+
+    // Load from chunked format (encoded)
+    log('popup', `LOAD: Loading chunked format for ${host}`);
+    chrome.storage.sync.get(`${host}_enabled`, en => {
+      const enabled = en[`${host}_enabled`] === true;
+      loadField(`${host}_js`, encodedJs => {
+        const js = decodeScript(encodedJs);
+        loadField(`${host}_css`, encodedCss => {
+          const css = decodeScript(encodedCss);
+          const data = { js, css, enabled };
+          log('popup', `LOAD: Chunked + decoded data loaded for ${host} (js:${js.length}, css:${css.length})`);
+          callback(data);
+        });
+      });
+    });
+  });
+}
+
+// Centralized log function for popup
+async function log(source, message) {
+  try {
+    const { boost_logs: logs = [] } = await chrome.storage.local.get('boost_logs');
+    logs.push({ timestamp: new Date().toISOString(), source, message });
+    if (logs.length > MAX_LOGS) logs.shift();
+    await chrome.storage.local.set({ boost_logs: logs });
+    console.log(`[${source}] ${message}`); // Plain console for popup
+  } catch (e) {
+    console.error(`Log failed: ${e}`);
+  }
+}
+
+// Load and display logs
+function loadLogs() {
+  chrome.storage.local.get('boost_logs', ({ boost_logs: logs = [] }) => {
+    const recent = logs.slice(-DISPLAY_LOGS).map(l => `[${new Date(l.timestamp).toLocaleString()}] ${l.source}: ${l.message}`).join('\n');
+    logPre.textContent = recent || 'No logs yet. Perform actions to generate logs.';
+  });
+}
+
+// Clear logs
+function clearLogs() {
+  chrome.storage.local.set({ boost_logs: [] }, () => {
+    logPre.textContent = 'Logs cleared.';
+    log('popup', 'Cleared all logs');
+  });
+}
+
 // Load data for current domain
 function loadSiteData() {
   chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
@@ -135,9 +330,7 @@ function loadSiteData() {
       currentHost = 'this site';
     }
 
-    chrome.storage.sync.get([currentHost], (items) => {
-      const data = items[currentHost] || { js: '', css: '', enabled: false };
-
+    loadData(currentHost, (data) => {
       const jsTextarea = document.querySelector('#js-editor textarea');
       const cssTextarea = document.querySelector('#css-editor textarea');
 
@@ -176,10 +369,7 @@ saveBtn.addEventListener('click', () => {
   const newHasContent = jsCode.trim().length > 0 || cssCode.trim().length > 0;
   const newEnabled = newHasContent ? isEnabled : false;
 
-  const saveObj = {};
-  saveObj[currentHost] = { js: jsCode, css: cssCode, enabled: newEnabled };
-
-  chrome.storage.sync.set(saveObj, () => {
+  saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, () => {
     hasContent = newHasContent;
     isEnabled = newEnabled;
 
@@ -204,11 +394,11 @@ toggleBtn.addEventListener('click', () => {
 
   updateToggleIcon(isEnabled);
 
-  const saveObj = {};
-  chrome.storage.sync.get([currentHost], (items) => {
-    saveObj[currentHost] = { ...items[currentHost], enabled: isEnabled };
-    chrome.storage.sync.set(saveObj);
-  });
+  // Pull current JS/CSS from textareas and save full data (simple and consistent)
+  const jsCode = document.querySelector('#js-editor textarea').value;
+  const cssCode = document.querySelector('#css-editor textarea').value;
+
+  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, () => {});
 
   chrome.tabs.reload(currentTabId);
 });

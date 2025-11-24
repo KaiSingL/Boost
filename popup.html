@@ -44,7 +44,8 @@
     body.mobile .tabs,
     body.mobile .code-editor-wrapper,
     body.mobile .action-button,
-    body.mobile .tab {
+    body.mobile .tab,
+    body.mobile .log-wrapper {
       max-width: 100% !important;
       box-sizing: border-box !important;
     }
@@ -185,6 +186,7 @@
       text-align: center;
       padding: 40px 20px 60px;
       gap: 24px;
+      position: relative; /* For absolute positioning of log button */
     }
 
     #landing h2 {
@@ -281,6 +283,106 @@
       display: block;
       white-space: pre;
     }
+
+    /* New styles for log view */
+    #log-view {
+      background: white;
+    }
+
+    .log-wrapper {
+      flex: 1;
+      background: white;
+      position: relative;
+      overflow: hidden;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #log-pre {
+      flex: 1;
+      margin: 0;
+      padding: 16px;
+      font-family: 'Fira Code', Consolas, Monaco, 'Courier New', monospace;
+      font-size: 14px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      background: #f8f9fa;
+      border: 1px solid #ddd;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #ccc #f8f9fa;
+      box-sizing: border-box;
+    }
+
+    #log-pre::-webkit-scrollbar {
+      width: 6px;
+    }
+    #log-pre::-webkit-scrollbar-track {
+      background: #f8f9fa;
+    }
+    #log-pre::-webkit-scrollbar-thumb {
+      background-color: #ccc;
+      border-radius: 3px;
+    }
+    #log-pre::-webkit-scrollbar-thumb:hover {
+      background-color: #1d3188;
+    }
+
+    .toolbar #clear-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .toolbar #clear-btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    /* Styles for small log button in lower right */
+    .log-btn {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 32px !important;
+      height: 32px !important;
+      background: white;
+      color: #1d3188;
+      border: 2px solid #1d3188;
+      border-radius: 8px; /* Slightly smaller radius for proportion */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      z-index: 10;
+    }
+
+    .log-btn:hover {
+      background: #1d3188;
+      color: white;
+    }
+
+    .log-btn svg {
+      width: 16px !important;
+      height: 16px !important;
+    }
+
+    /* Mobile adjustments for log button */
+    body.mobile .log-btn {
+      width: 36px !important;
+      height: 36px !important;
+      bottom: 10px !important;
+      right: 10px !important;
+      border-radius: 10px;
+    }
+
+    body.mobile .log-btn svg {
+      width: 18px !important;
+      height: 18px !important;
+    }
   </style>
 </head>
 <body>
@@ -304,6 +406,10 @@
         <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
       </svg>
     </button>
+
+    <button id="clear-btn" style="display:none;" aria-label="Clear logs">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-icon lucide-trash"><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+    </button>
   </div>
 
   <div id="landing" class="view active">
@@ -326,6 +432,10 @@
         </svg>
       </button>
     </div>
+
+    <button id="log-btn" class="log-btn">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-scroll-text-icon lucide-scroll-text"><path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/></svg>
+    </button>
   </div>
 
   <div id="editor-view" class="view">
@@ -343,6 +453,12 @@
         <textarea spellcheck="false" autocomplete="off"></textarea>
         <pre><code class="language-css"></code></pre>
       </div>
+    </div>
+  </div>
+
+  <div id="log-view" class="view">
+    <div class="log-wrapper">
+      <pre id="log-pre">No logs yet. Perform actions to generate logs.</pre>
     </div>
   </div>
 
