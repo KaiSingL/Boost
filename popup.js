@@ -3,7 +3,7 @@
 // Mobile Detection Script - Runs immediately, no layout flash
 (function () {
   const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
-                         (/Macintosh/i.test(navigator.userAgent) && 'ontouchend' in document); // iPadOS
+    (/Macintosh/i.test(navigator.userAgent) && 'ontouchend' in document); // iPadOS
 
   if (isMobileDevice) {
     document.documentElement.classList.add('mobile');
@@ -48,6 +48,10 @@ const statusText = document.getElementById('status-text');
 const logPre = document.getElementById('log-pre');
 const logBtn = document.getElementById('log-btn');
 
+// Reload button icons
+const refreshIcon = reloadBtn.querySelector('.refresh-icon');
+const reloadPlayIcon = reloadBtn.querySelector('.play-icon');
+
 // Constants for chunking
 const CHUNK_SIZE = 7000; // Safe character limit per chunk to stay under 8192 bytes (accounts for JSON overhead)
 const MAX_LOGS = 500; // Max logs to store
@@ -89,6 +93,23 @@ function highlightCurrentEditor() {
   }
 }
 
+// Helper: Update reload button icon visibility and label based on state
+function updateReloadIcon() {
+  if (!hasContent) {
+    refreshIcon.style.display = 'block';
+    reloadPlayIcon.style.display = 'none';
+    reloadBtn.setAttribute('aria-label', 'Reload page');
+  } else if (!isEnabled) {
+    refreshIcon.style.display = 'none';
+    reloadPlayIcon.style.display = 'block';
+    reloadBtn.setAttribute('aria-label', 'Enable Boost and reload page');
+  } else {
+    refreshIcon.style.display = 'block';
+    reloadPlayIcon.style.display = 'none';
+    reloadBtn.setAttribute('aria-label', 'Reload page');
+  }
+}
+
 function updateToggleIcon(enabled) {
   playIcon.style.display = enabled ? 'none' : 'block';
   pauseIcon.style.display = enabled ? 'block' : 'none';
@@ -122,6 +143,8 @@ function showEditor() {
 
   // Critical: highlight immediately when entering editor
   highlightCurrentEditor();
+  // Update reload icon for current state
+  updateReloadIcon();
   currentView = 'editor';
 }
 
@@ -314,7 +337,7 @@ function clearLogs() {
 
 // Load data for current domain
 function loadSiteData() {
-  chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
 
     if (!tab || !tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
@@ -345,6 +368,8 @@ function loadSiteData() {
         : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
 
       updateToggleIcon(isEnabled);
+      // Update reload icon for current state
+      updateReloadIcon();
       showLanding();
 
       // Critical: immediately highlight both editors after loading saved code
@@ -378,6 +403,8 @@ saveBtn.addEventListener('click', () => {
       : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
 
     updateToggleIcon(isEnabled);
+    // Update reload icon after potential state change
+    updateReloadIcon();
 
     saveBtn.innerHTML = checkIconHTML;
     setTimeout(() => saveBtn.innerHTML = saveIconHTML, 1500);
@@ -398,12 +425,26 @@ toggleBtn.addEventListener('click', () => {
   const jsCode = document.querySelector('#js-editor textarea').value;
   const cssCode = document.querySelector('#css-editor textarea').value;
 
-  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, () => {});
+  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, () => { });
 
   chrome.tabs.reload(currentTabId);
 });
 
-// Reload page button
+// Reload page button with enhanced toggle logic
 reloadBtn.addEventListener('click', () => {
-  chrome.tabs.reload(currentTabId);
+  if (!hasContent) {
+    // Standard reload when no content
+    chrome.tabs.reload(currentTabId);
+  } else {
+    // Toggle enabled state, save, then reload
+    const newEnabled = !isEnabled;
+    isEnabled = newEnabled; // Update local state immediately
+    const jsCode = document.querySelector('#js-editor textarea').value;
+    const cssCode = document.querySelector('#css-editor textarea').value;
+    saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, () => {
+      // Update icon (though popup will close soon)
+      updateReloadIcon();
+      chrome.tabs.reload(currentTabId);
+    });
+  }
 });
