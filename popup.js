@@ -437,7 +437,7 @@ reloadBtn.addEventListener('click', () => {
     chrome.tabs.reload(currentTabId);
   } else {
     // Toggle enabled state, save, then reload
-    const newEnabled = !isEnabled;
+    const newEnabled = true;
     isEnabled = newEnabled; // Update local state immediately
     const jsCode = document.querySelector('#js-editor textarea').value;
     const cssCode = document.querySelector('#css-editor textarea').value;
