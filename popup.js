@@ -450,14 +450,22 @@ reloadBtn.addEventListener('click', () => {
   }
 });
 
-// === NEW: Ctrl+S / Cmd+S shortcut for desktop browsers ===
+// === Keyboard shortcuts for desktop browsers (Ctrl+S/Cmd+S for save, Ctrl+R/Cmd+R for reload) ===
 if (!window.isMobileDevice) {
   document.addEventListener('keydown', (e) => {
-    // Ctrl (Win/Linux) or Cmd (Mac) + S (lowercase 's' ensures no Shift modifier)
+    // Save: Ctrl/Cmd + S
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault(); // Block browser "Save Page" dialog
+      e.preventDefault();
       if (currentView === 'editor') {
-        saveBtn.click(); // Reuse existing save logic + UI flash
+        saveBtn.click();
+      }
+    }
+
+    // Reload: Ctrl/Cmd + R
+    if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+      e.preventDefault();
+      if (currentView === 'editor') {
+        reloadBtn.click();
       }
     }
   });
