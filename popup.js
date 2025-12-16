@@ -1,3 +1,4 @@
+// popup.js
 "use strict";
 
 // Mobile Detection Script - Runs immediately, no layout flash
@@ -448,3 +449,16 @@ reloadBtn.addEventListener('click', () => {
     });
   }
 });
+
+// === NEW: Ctrl+S / Cmd+S shortcut for desktop browsers ===
+if (!window.isMobileDevice) {
+  document.addEventListener('keydown', (e) => {
+    // Ctrl (Win/Linux) or Cmd (Mac) + S (lowercase 's' ensures no Shift modifier)
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault(); // Block browser "Save Page" dialog
+      if (currentView === 'editor') {
+        saveBtn.click(); // Reuse existing save logic + UI flash
+      }
+    }
+  });
+}
