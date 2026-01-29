@@ -11,29 +11,22 @@
     document.body.classList.add('mobile');
   }
 
-  // Expose for use in functions
   window.isMobileDevice = isMobileDevice;
 })();
 
-// Tab switching
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    document.querySelectorAll('.code-editor').forEach(e => e.classList.remove('active'));
-    document.getElementById(tab.dataset.target).classList.add('active');
+// CodeMirror editor instances
+let jsEditor = null;
+let cssEditor = null;
+let editorsInitialized = false;
 
-    // New: trigger immediate highlight when switching tabs
-    highlightCurrentEditor();
-  });
-});
-
+// State variables
 let currentHost = null;
 let currentTabId = null;
 let isEnabled = false;
 let hasContent = false;
-let currentView = 'landing'; // Track current view: 'landing', 'editor', 'log'
+let currentView = 'landing';
 
+// DOM elements
 const toggleBtn = document.getElementById('toggle-btn');
 const playIcon = toggleBtn.querySelector('.play-icon');
 const pauseIcon = toggleBtn.querySelector('.pause-icon');
@@ -48,23 +41,21 @@ const clearBtn = document.getElementById('clear-btn');
 const statusText = document.getElementById('status-text');
 const logPre = document.getElementById('log-pre');
 const logBtn = document.getElementById('log-btn');
-
-// Reload button icons
 const refreshIcon = reloadBtn.querySelector('.refresh-icon');
 const reloadPlayIcon = reloadBtn.querySelector('.play-icon');
 
-// Constants for chunking
-const CHUNK_SIZE = 7000; // Safe character limit per chunk to stay under 8192 bytes (accounts for JSON overhead)
-const MAX_LOGS = 500; // Max logs to store
-const DISPLAY_LOGS = 100; // Last N to display
+// Constants
+const CHUNK_SIZE = 7000;
+const MAX_LOGS = 500;
+const DISPLAY_LOGS = 100;
 
-// Helpers for base64 encoding/decoding to avoid escaping issues
+// Helpers
 function encodeScript(script) {
   try {
-    return btoa(unescape(encodeURIComponent(script))); // Handle UTF-8 properly
+    return btoa(unescape(encodeURIComponent(script)));
   } catch (e) {
     console.error('Encode failed:', e);
-    return btoa(script); // Fallback
+    return btoa(script);
   }
 }
 
@@ -72,29 +63,76 @@ function decodeScript(encoded) {
   try {
     return decodeURIComponent(escape(atob(encoded)));
   } catch (e) {
-    console.warn('Decode failed, using raw (possible corruption):', e);
+    console.warn('Decode failed:', e);
     try {
       return atob(encoded);
     } catch (e2) {
       console.error('Raw decode failed:', e2);
-      return encoded; // Ultimate fallback
+      return encoded;
     }
   }
 }
 
-// Helper: highlight the currently visible editor
-function highlightCurrentEditor() {
-  const activeEditor = document.querySelector('.code-editor.active');
-  if (!activeEditor) return;
-  const textarea = activeEditor.querySelector('textarea');
-  const code = activeEditor.querySelector('code');
-  if (code && textarea) {
-    code.textContent = textarea.value || '';
-    Prism.highlightElement(code);
-  }
+// CodeMirror initialization
+function waitForCodeMirror(callback, maxAttempts = 50) {
+  let attempts = 0;
+  const check = () => {
+    attempts++;
+    if (typeof CodeMirror !== 'undefined') {
+      callback();
+    } else if (attempts < maxAttempts) {
+      setTimeout(check, 100);
+    } else {
+      console.error('CodeMirror failed to load after', maxAttempts, 'attempts');
+    }
+  };
+  check();
 }
 
-// Helper: Update reload button icon visibility and label based on state
+function initCodeMirror() {
+  if (editorsInitialized || typeof CodeMirror === 'undefined') return;
+
+  // Initialize JS editor
+  const jsContainer = document.getElementById('js-editor');
+  if (jsContainer && !jsEditor) {
+    jsEditor = CodeMirror(jsContainer, {
+      mode: 'javascript',
+      theme: 'default',
+      lineNumbers: true,
+      lineWrapping: true,
+      tabSize: 2,
+      indentWithTabs: false,
+      extraKeys: {
+        'Tab': function(cm) {
+          cm.replaceSelection('  ', 'end');
+        }
+      }
+    });
+  }
+
+  // Initialize CSS editor
+  const cssContainer = document.getElementById('css-editor');
+  if (cssContainer && !cssEditor) {
+    cssEditor = CodeMirror(cssContainer, {
+      mode: 'css',
+      theme: 'default',
+      lineNumbers: true,
+      lineWrapping: true,
+      tabSize: 2,
+      indentWithTabs: false,
+      extraKeys: {
+        'Tab': function(cm) {
+          cm.replaceSelection('  ', 'end');
+        }
+      }
+    });
+  }
+
+  editorsInitialized = true;
+  console.log('CodeMirror editors initialized');
+}
+
+// Helper: Update reload button icon
 function updateReloadIcon() {
   if (!hasContent) {
     refreshIcon.style.display = 'block';
@@ -142,9 +180,20 @@ function showEditor() {
   clearBtn.style.display = 'none';
   toggleBtn.style.display = hasContent ? 'flex' : 'none';
 
-  // Critical: highlight immediately when entering editor
-  highlightCurrentEditor();
-  // Update reload icon for current state
+  // Initialize editors if not already done
+  if (!editorsInitialized) {
+    waitForCodeMirror(() => {
+      initCodeMirror();
+      // Refresh editors to ensure proper rendering
+      if (jsEditor) jsEditor.refresh();
+      if (cssEditor) cssEditor.refresh();
+    });
+  } else {
+    // Refresh on show
+    if (jsEditor) jsEditor.refresh();
+    if (cssEditor) cssEditor.refresh();
+  }
+
   updateReloadIcon();
   currentView = 'editor';
 }
@@ -161,9 +210,27 @@ function showLog() {
   toggleBtn.style.display = 'none';
 
   loadLogs();
-  logPre.scrollTop = logPre.scrollHeight; // Auto-scroll to bottom
+  logPre.scrollTop = logPre.scrollHeight;
   currentView = 'log';
 }
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.code-editor').forEach(e => e.classList.remove('active'));
+    document.getElementById(tab.dataset.target).classList.add('active');
+
+    // Refresh the active editor
+    if (editorsInitialized) {
+      setTimeout(() => {
+        if (jsEditor) jsEditor.refresh();
+        if (cssEditor) cssEditor.refresh();
+      }, 10);
+    }
+  });
+});
 
 backBtn.addEventListener('click', () => {
   if (currentView === 'editor') showLanding();
@@ -174,39 +241,7 @@ document.getElementById('edit-btn').addEventListener('click', showEditor);
 logBtn.addEventListener('click', showLog);
 clearBtn.addEventListener('click', clearLogs);
 
-// Editors sync & Tab key support
-document.querySelectorAll('.code-editor').forEach(editor => {
-  const textarea = editor.querySelector('textarea');
-  const code = editor.querySelector('code');
-  const pre = editor.querySelector('pre');
-
-  const sync = () => {
-    if (code) code.textContent = textarea?.value || '';
-    Prism.highlightElement(code);
-  };
-
-  textarea.addEventListener('input', sync);
-  textarea.addEventListener('scroll', () => {
-    if (pre) pre.scrollTop = textarea.scrollTop;
-    if (pre) pre.scrollLeft = textarea.scrollLeft;
-  });
-
-  textarea.addEventListener('keydown', e => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      textarea.value = textarea.value.substring(0, start) + "  " + textarea.value.substring(end);
-      textarea.selectionStart = textarea.selectionEnd = start + 2;
-      sync();
-    }
-  });
-
-  // Initial sync for each editor (runs once on load)
-  sync();
-});
-
-// Function to chunk a string and add to sets object
+// Chunk functions
 function chunkAndSet(baseKey, value, sets) {
   if (value.length === 0) {
     sets[`${baseKey}_chunks`] = 0;
@@ -224,7 +259,6 @@ function chunkAndSet(baseKey, value, sets) {
   });
 }
 
-// Function to save data in chunked format (unified across platforms, with base64)
 function saveData(host, data, cb) {
   const totalSize = (data.js || '').length + (data.css || '').length;
   log('popup', `SAVE: Starting chunked save for ${host} (raw size: ${totalSize} chars)`);
@@ -239,7 +273,7 @@ function saveData(host, data, cb) {
   chunkAndSet(`${host}_css`, encodedCss, sets);
 
   if (totalSize > 100000) {
-    log('popup', 'SAVE: Large script detected (>100KB) - using chunks + base64 for unlimited sync');
+    log('popup', 'SAVE: Large script detected (>100KB) - using chunks + base64');
   }
 
   chrome.storage.sync.set(sets, () => {
@@ -248,7 +282,6 @@ function saveData(host, data, cb) {
   });
 }
 
-// Function to load a chunked field (raw encoded string)
 function loadField(baseKey, cb) {
   chrome.storage.sync.get(`${baseKey}_chunks`, items => {
     const numChunks = items[`${baseKey}_chunks`] || 0;
@@ -272,25 +305,22 @@ function loadField(baseKey, cb) {
   });
 }
 
-// Function to load site data (with migration from old format to chunks + base64)
 function loadData(host, callback) {
   log('popup', `LOAD: Starting load for ${host}`);
 
   chrome.storage.sync.get(host, items => {
     if (items[host]) {
-      // Old single-key format found: migrate to chunked + encoded
       const oldData = items[host];
-      log('popup', `LOAD: Old format found, migrating to chunks + base64 for ${host}`);
+      log('popup', `LOAD: Old format found, migrating for ${host}`);
       saveData(host, oldData, () => {
         chrome.storage.sync.remove(host, () => {
           log('popup', `LOAD: Migration complete for ${host}`);
-          callback(oldData); // Use old data for immediate load; next will be decoded chunks
+          callback(oldData);
         });
       });
       return;
     }
 
-    // Load from chunked format (encoded)
     log('popup', `LOAD: Loading chunked format for ${host}`);
     chrome.storage.sync.get(`${host}_enabled`, en => {
       const enabled = en[`${host}_enabled`] === true;
@@ -299,7 +329,7 @@ function loadData(host, callback) {
         loadField(`${host}_css`, encodedCss => {
           const css = decodeScript(encodedCss);
           const data = { js, css, enabled };
-          log('popup', `LOAD: Chunked + decoded data loaded for ${host} (js:${js.length}, css:${css.length})`);
+          log('popup', `LOAD: Data loaded for ${host} (js:${js.length}, css:${css.length})`);
           callback(data);
         });
       });
@@ -307,20 +337,18 @@ function loadData(host, callback) {
   });
 }
 
-// Centralized log function for popup
 async function log(source, message) {
   try {
     const { boost_logs: logs = [] } = await chrome.storage.local.get('boost_logs');
     logs.push({ timestamp: new Date().toISOString(), source, message });
     if (logs.length > MAX_LOGS) logs.shift();
     await chrome.storage.local.set({ boost_logs: logs });
-    console.log(`[${source}] ${message}`); // Plain console for popup
+    console.log(`[${source}] ${message}`);
   } catch (e) {
     console.error(`Log failed: ${e}`);
   }
 }
 
-// Load and display logs
 function loadLogs() {
   chrome.storage.local.get('boost_logs', ({ boost_logs: logs = [] }) => {
     const recent = logs.slice(-DISPLAY_LOGS).map(l => `[${new Date(l.timestamp).toLocaleString()}] ${l.source}: ${l.message}`).join('\n');
@@ -328,7 +356,6 @@ function loadLogs() {
   });
 }
 
-// Clear logs
 function clearLogs() {
   chrome.storage.local.set({ boost_logs: [] }, () => {
     logPre.textContent = 'Logs cleared.';
@@ -355,11 +382,18 @@ function loadSiteData() {
     }
 
     loadData(currentHost, (data) => {
-      const jsTextarea = document.querySelector('#js-editor textarea');
-      const cssTextarea = document.querySelector('#css-editor textarea');
+      // Initialize editors and set content
+      waitForCodeMirror(() => {
+        initCodeMirror();
 
-      if (jsTextarea) jsTextarea.value = data.js || '';
-      if (cssTextarea) cssTextarea.value = data.css || '';
+        if (jsEditor) {
+          jsEditor.setValue(data.js || '');
+        }
+
+        if (cssEditor) {
+          cssEditor.setValue(data.css || '');
+        }
+      });
 
       isEnabled = data.enabled === true;
       hasContent = (data.js || '').trim().length > 0 || (data.css || '').trim().length > 0;
@@ -369,28 +403,21 @@ function loadSiteData() {
         : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
 
       updateToggleIcon(isEnabled);
-      // Update reload icon for current state
       updateReloadIcon();
       showLanding();
-
-      // Critical: immediately highlight both editors after loading saved code
-      highlightCurrentEditor();
     });
   });
 }
 
 loadSiteData();
 
-// Save button with check flash
+// Save button
 const saveIconHTML = saveBtn.innerHTML;
 const checkIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
 
 saveBtn.addEventListener('click', () => {
-  const jsTextarea = document.querySelector('#js-editor textarea');
-  const cssTextarea = document.querySelector('#css-editor textarea');
-
-  const jsCode = jsTextarea ? jsTextarea.value : '';
-  const cssCode = cssTextarea ? cssTextarea.value : '';
+  const jsCode = jsEditor ? jsEditor.getValue() : '';
+  const cssCode = cssEditor ? cssEditor.getValue() : '';
 
   const newHasContent = jsCode.trim().length > 0 || cssCode.trim().length > 0;
   const newEnabled = newHasContent ? isEnabled : false;
@@ -404,7 +431,6 @@ saveBtn.addEventListener('click', () => {
       : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
 
     updateToggleIcon(isEnabled);
-    // Update reload icon after potential state change
     updateReloadIcon();
 
     saveBtn.innerHTML = checkIconHTML;
@@ -422,38 +448,33 @@ toggleBtn.addEventListener('click', () => {
 
   updateToggleIcon(isEnabled);
 
-  // Pull current JS/CSS from textareas and save full data (simple and consistent)
-  const jsCode = document.querySelector('#js-editor textarea').value;
-  const cssCode = document.querySelector('#css-editor textarea').value;
+  const jsCode = jsEditor ? jsEditor.getValue() : '';
+  const cssCode = cssEditor ? cssEditor.getValue() : '';
 
   saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, () => { });
 
   chrome.tabs.reload(currentTabId);
 });
 
-// Reload page button with enhanced toggle logic
+// Reload page button
 reloadBtn.addEventListener('click', () => {
   if (!hasContent) {
-    // Standard reload when no content
     chrome.tabs.reload(currentTabId);
   } else {
-    // Toggle enabled state, save, then reload
     const newEnabled = true;
-    isEnabled = newEnabled; // Update local state immediately
-    const jsCode = document.querySelector('#js-editor textarea').value;
-    const cssCode = document.querySelector('#css-editor textarea').value;
+    isEnabled = newEnabled;
+    const jsCode = jsEditor ? jsEditor.getValue() : '';
+    const cssCode = cssEditor ? cssEditor.getValue() : '';
     saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, () => {
-      // Update icon (though popup will close soon)
       updateReloadIcon();
       chrome.tabs.reload(currentTabId);
     });
   }
 });
 
-// === Keyboard shortcuts for desktop browsers (Ctrl+S/Cmd+S for save, Ctrl+R/Cmd+R for reload) ===
+// Keyboard shortcuts
 if (!window.isMobileDevice) {
   document.addEventListener('keydown', (e) => {
-    // Save: Ctrl/Cmd + S
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
       if (currentView === 'editor') {
@@ -461,7 +482,6 @@ if (!window.isMobileDevice) {
       }
     }
 
-    // Reload: Ctrl/Cmd + R
     if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
       e.preventDefault();
       if (currentView === 'editor') {
