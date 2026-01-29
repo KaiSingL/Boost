@@ -1,0 +1,123 @@
+/*
+
+    Name:       Tomorrow (Light)
+    Author:     Chris Kempson
+
+    Adapted for CodeMirror from the TextMate theme
+    https://github.com/chriskempson/tomorrow-theme
+
+*/
+
+.cm-s-tomorrow-light.CodeMirror { 
+  background: #FFFFFF; 
+  color: #4D4D4C; 
+}
+
+.cm-s-tomorrow-light div.CodeMirror-selected { 
+  background: #D6D6D6; 
+}
+
+.cm-s-tomorrow-light .CodeMirror-gutters { 
+  background: #FFFFFF; 
+  border-right: 1px solid #ddd; 
+}
+
+.cm-s-tomorrow-light .CodeMirror-guttermarker { 
+  color: #C82829; 
+}
+
+.cm-s-tomorrow-light .CodeMirror-guttermarker-subtle { 
+  color: #8E908C; 
+}
+
+.cm-s-tomorrow-light .CodeMirror-linenumber { 
+  color: #8E908C; 
+}
+
+.cm-s-tomorrow-light .CodeMirror-cursor { 
+  border-left: 1px solid #4D4D4C; 
+}
+
+.cm-s-tomorrow-light span.cm-comment { 
+  color: #8E908C; 
+  font-style: italic;
+}
+
+.cm-s-tomorrow-light span.cm-atom { 
+  color: #F5871F; 
+}
+
+.cm-s-tomorrow-light span.cm-number { 
+  color: #F5871F; 
+}
+
+.cm-s-tomorrow-light span.cm-property, 
+.cm-s-tomorrow-light span.cm-attribute { 
+  color: #4271AE; 
+}
+
+.cm-s-tomorrow-light span.cm-keyword { 
+  color: #8959A8; 
+}
+
+.cm-s-tomorrow-light span.cm-string { 
+  color: #718C00; 
+}
+
+.cm-s-tomorrow-light span.cm-string-2 { 
+  color: #C99E00; 
+}
+
+.cm-s-tomorrow-light span.cm-variable { 
+  color: #4D4D4C; 
+}
+
+.cm-s-tomorrow-light span.cm-variable-2 { 
+  color: #4271AE; 
+}
+
+.cm-s-tomorrow-light span.cm-def { 
+  color: #4271AE; 
+}
+
+.cm-s-tomorrow-light span.cm-bracket { 
+  color: #4D4D4C; 
+}
+
+.cm-s-tomorrow-light span.cm-tag { 
+  color: #C82829; 
+}
+
+.cm-s-tomorrow-light span.cm-link { 
+  color: #8959A8; 
+}
+
+.cm-s-tomorrow-light span.cm-operator { 
+  color: #3E999F; 
+}
+
+.cm-s-tomorrow-light span.cm-builtin { 
+  color: #8959A8; 
+}
+
+.cm-s-tomorrow-light span.cm-meta { 
+  color: #4271AE; 
+}
+
+.cm-s-tomorrow-light span.cm-error { 
+  background: #C82829; 
+  color: #FFFFFF; 
+}
+
+.cm-s-tomorrow-light .CodeMirror-activeline-background { 
+  background: #EFEFEF; 
+}
+
+.cm-s-tomorrow-light .CodeMirror-matchingbracket { 
+  text-decoration: underline; 
+  color: #4271AE !important; 
+}
+
+.cm-s-tomorrow-light .CodeMirror-matchingtag { 
+  background: rgba(67, 113, 174, 0.1); 
+}

@@ -97,7 +97,7 @@ function initCodeMirror() {
   if (jsContainer && !jsEditor) {
     jsEditor = CodeMirror(jsContainer, {
       mode: 'javascript',
-      theme: 'default',
+      theme: 'tomorrow-light',
       lineNumbers: true,
       lineWrapping: true,
       tabSize: 2,
@@ -115,7 +115,7 @@ function initCodeMirror() {
   if (cssContainer && !cssEditor) {
     cssEditor = CodeMirror(cssContainer, {
       mode: 'css',
-      theme: 'default',
+      theme: 'tomorrow-light',
       lineNumbers: true,
       lineWrapping: true,
       tabSize: 2,
