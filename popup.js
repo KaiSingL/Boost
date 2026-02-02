@@ -25,11 +25,9 @@ let currentTabId = null;
 let isEnabled = false;
 let hasContent = false;
 let currentView = 'landing';
+let lastModified = null;
 
 // DOM elements
-const toggleBtn = document.getElementById('toggle-btn');
-const playIcon = toggleBtn.querySelector('.play-icon');
-const pauseIcon = toggleBtn.querySelector('.pause-icon');
 const landing = document.getElementById('landing');
 const editorView = document.getElementById('editor-view');
 const logView = document.getElementById('log-view');
@@ -38,11 +36,31 @@ const backBtn = document.getElementById('back-btn');
 const saveBtn = document.getElementById('save-btn');
 const reloadBtn = document.getElementById('reload-btn');
 const clearBtn = document.getElementById('clear-btn');
-const statusText = document.getElementById('status-text');
 const logPre = document.getElementById('log-pre');
 const logBtn = document.getElementById('log-btn');
-const refreshIcon = reloadBtn.querySelector('.refresh-icon');
-const reloadPlayIcon = reloadBtn.querySelector('.play-icon');
+
+// Status elements
+const mainLed = document.getElementById('main-led');
+const mainStatusText = document.getElementById('main-status-text');
+const toolbarLed = document.getElementById('toolbar-led');
+const toolbarStatusText = document.getElementById('toolbar-status-text');
+const toolbarStatus = document.getElementById('toolbar-status');
+const domainText = document.getElementById('domain-text');
+const emptyDomain = document.getElementById('empty-domain');
+const sizeText = document.getElementById('size-text');
+const modifiedText = document.getElementById('modified-text');
+const componentsText = document.getElementById('components-text');
+
+// Panels
+const emptyState = document.getElementById('empty-state');
+const actionPanel = document.getElementById('action-panel');
+const createPanel = document.getElementById('create-panel');
+
+// Action buttons
+const toggleBtn = document.getElementById('toggle-btn');
+const toggleText = document.getElementById('toggle-text');
+const editBtn = document.getElementById('edit-btn');
+const createBtn = document.getElementById('create-btn');
 
 // Constants
 const CHUNK_SIZE = 7000;
@@ -71,6 +89,32 @@ function decodeScript(encoded) {
       return encoded;
     }
   }
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function formatDate(isoString) {
+  if (!isoString) return 'Never';
+  const date = new Date(isoString);
+  const now = new Date();
+  const diff = now - date;
+  
+  // Less than 1 minute
+  if (diff < 60000) return 'Just now';
+  // Less than 1 hour
+  if (diff < 3600000) return Math.floor(diff / 60000) + ' min ago';
+  // Less than 24 hours
+  if (diff < 86400000) return Math.floor(diff / 3600000) + ' hr ago';
+  // Less than 7 days
+  if (diff < 604800000) return Math.floor(diff / 86400000) + ' days ago';
+  
+  return date.toLocaleDateString();
 }
 
 // CodeMirror initialization
@@ -132,28 +176,56 @@ function initCodeMirror() {
   console.log('CodeMirror editors initialized');
 }
 
-// Helper: Update reload button icon
-function updateReloadIcon() {
-  if (!hasContent) {
-    refreshIcon.style.display = 'block';
-    reloadPlayIcon.style.display = 'none';
-    reloadBtn.setAttribute('aria-label', 'Reload page');
-  } else if (!isEnabled) {
-    refreshIcon.style.display = 'none';
-    reloadPlayIcon.style.display = 'block';
-    reloadBtn.setAttribute('aria-label', 'Enable Boost and reload page');
+// LED Status Updates
+function updateStatusLED(enabled, hasScript) {
+  if (!hasScript) {
+    // No script state
+    mainLed.classList.remove('active');
+    mainStatusText.textContent = 'NO SCRIPT';
+    if (toolbarLed) {
+      toolbarLed.classList.remove('active');
+      toolbarStatusText.textContent = 'NO SCRIPT';
+    }
+  } else if (enabled) {
+    // Active state
+    mainLed.classList.add('active');
+    mainStatusText.textContent = 'ACTIVE';
+    if (toolbarLed) {
+      toolbarLed.classList.add('active');
+      toolbarStatusText.textContent = 'ACTIVE';
+    }
   } else {
-    refreshIcon.style.display = 'block';
-    reloadPlayIcon.style.display = 'none';
-    reloadBtn.setAttribute('aria-label', 'Reload page');
+    // Paused state
+    mainLed.classList.remove('active');
+    mainStatusText.textContent = 'PAUSED';
+    if (toolbarLed) {
+      toolbarLed.classList.remove('active');
+      toolbarStatusText.textContent = 'PAUSED';
+    }
   }
 }
 
-function updateToggleIcon(enabled) {
-  playIcon.style.display = enabled ? 'none' : 'block';
-  pauseIcon.style.display = enabled ? 'block' : 'none';
-  toggleBtn.style.backgroundColor = enabled ? '#0d6efd' : 'white';
-  toggleBtn.style.color = enabled ? 'white' : '#0d6efd';
+function updateToggleButton(enabled) {
+  if (enabled) {
+    toggleBtn.classList.add('active');
+    toggleText.textContent = 'ENABLED';
+  } else {
+    toggleBtn.classList.remove('active');
+    toggleText.textContent = 'DISABLED';
+  }
+}
+
+function updateTechnicalInfo(jsCode, cssCode) {
+  const jsSize = jsCode ? new Blob([jsCode]).size : 0;
+  const cssSize = cssCode ? new Blob([cssCode]).size : 0;
+  const totalSize = jsSize + cssSize;
+  
+  sizeText.textContent = formatBytes(totalSize);
+  componentsText.textContent = `JS: ${formatBytes(jsSize)} | CSS: ${formatBytes(cssSize)}`;
+  
+  if (lastModified) {
+    modifiedText.textContent = formatDate(lastModified);
+  }
 }
 
 function showLanding() {
@@ -165,8 +237,23 @@ function showLanding() {
   saveBtn.style.display = 'none';
   reloadBtn.style.display = 'none';
   clearBtn.style.display = 'none';
-  toggleBtn.style.display = hasContent ? 'flex' : 'none';
+  toolbarStatus.style.display = 'none';
   currentView = 'landing';
+  
+  // Update visibility based on hasContent
+  updateLandingVisibility();
+}
+
+function updateLandingVisibility() {
+  if (hasContent) {
+    emptyState.style.display = 'none';
+    createPanel.style.display = 'none';
+    actionPanel.style.display = 'flex';
+  } else {
+    emptyState.style.display = 'flex';
+    createPanel.style.display = 'flex';
+    actionPanel.style.display = 'none';
+  }
 }
 
 function showEditor() {
@@ -178,23 +265,20 @@ function showEditor() {
   saveBtn.style.display = 'flex';
   reloadBtn.style.display = 'flex';
   clearBtn.style.display = 'none';
-  toggleBtn.style.display = hasContent ? 'flex' : 'none';
+  toolbarStatus.style.display = 'flex';
 
   // Initialize editors if not already done
   if (!editorsInitialized) {
     waitForCodeMirror(() => {
       initCodeMirror();
-      // Refresh editors to ensure proper rendering
       if (jsEditor) jsEditor.refresh();
       if (cssEditor) cssEditor.refresh();
     });
   } else {
-    // Refresh on show
     if (jsEditor) jsEditor.refresh();
     if (cssEditor) cssEditor.refresh();
   }
 
-  updateReloadIcon();
   currentView = 'editor';
 }
 
@@ -207,7 +291,7 @@ function showLog() {
   clearBtn.style.display = 'flex';
   saveBtn.style.display = 'none';
   reloadBtn.style.display = 'none';
-  toggleBtn.style.display = 'none';
+  toolbarStatus.style.display = 'none';
 
   loadLogs();
   logPre.scrollTop = logPre.scrollHeight;
@@ -222,7 +306,6 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.code-editor').forEach(e => e.classList.remove('active'));
     document.getElementById(tab.dataset.target).classList.add('active');
 
-    // Refresh the active editor
     if (editorsInitialized) {
       setTimeout(() => {
         if (jsEditor) jsEditor.refresh();
@@ -237,7 +320,8 @@ backBtn.addEventListener('click', () => {
   if (currentView === 'log') showLanding();
 });
 
-document.getElementById('edit-btn').addEventListener('click', showEditor);
+editBtn.addEventListener('click', showEditor);
+createBtn.addEventListener('click', showEditor);
 logBtn.addEventListener('click', showLog);
 clearBtn.addEventListener('click', clearLogs);
 
@@ -269,6 +353,7 @@ function saveData(host, data, cb) {
 
   const sets = {};
   sets[`${host}_enabled`] = data.enabled;
+  sets[`${host}_modified`] = new Date().toISOString();
   chunkAndSet(`${host}_js`, encodedJs, sets);
   chunkAndSet(`${host}_css`, encodedCss, sets);
 
@@ -278,6 +363,7 @@ function saveData(host, data, cb) {
 
   chrome.storage.sync.set(sets, () => {
     log('popup', `SAVE: Chunked save complete for ${host}`);
+    lastModified = sets[`${host}_modified`];
     if (cb) cb();
   });
 }
@@ -322,8 +408,10 @@ function loadData(host, callback) {
     }
 
     log('popup', `LOAD: Loading chunked format for ${host}`);
-    chrome.storage.sync.get(`${host}_enabled`, en => {
-      const enabled = en[`${host}_enabled`] === true;
+    chrome.storage.sync.get([`${host}_enabled`, `${host}_modified`], items => {
+      const enabled = items[`${host}_enabled`] === true;
+      lastModified = items[`${host}_modified`] || null;
+      
       loadField(`${host}_js`, encodedJs => {
         const js = decodeScript(encodedJs);
         loadField(`${host}_css`, encodedCss => {
@@ -369,8 +457,12 @@ function loadSiteData() {
     const tab = tabs[0];
 
     if (!tab || !tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-      statusText.innerHTML = 'Open a website to boost';
-      if (document.querySelector('.actions')) document.querySelector('.actions').style.display = 'none';
+      domainText.textContent = 'N/A';
+      emptyDomain.textContent = 'this browser page';
+      emptyState.style.display = 'flex';
+      createPanel.style.display = 'none';
+      actionPanel.style.display = 'none';
+      updateStatusLED(false, false);
       return;
     }
 
@@ -380,6 +472,9 @@ function loadSiteData() {
     } catch (e) {
       currentHost = 'this site';
     }
+
+    domainText.textContent = currentHost;
+    emptyDomain.textContent = currentHost;
 
     loadData(currentHost, (data) => {
       // Initialize editors and set content
@@ -398,12 +493,11 @@ function loadSiteData() {
       isEnabled = data.enabled === true;
       hasContent = (data.js || '').trim().length > 0 || (data.css || '').trim().length > 0;
 
-      statusText.innerHTML = hasContent
-        ? `Boost is <strong>${isEnabled ? 'active' : 'paused'}</strong> on <strong>${currentHost}</strong>.`
-        : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
-
-      updateToggleIcon(isEnabled);
-      updateReloadIcon();
+      // Update UI
+      updateStatusLED(isEnabled, hasContent);
+      updateToggleButton(isEnabled);
+      updateTechnicalInfo(data.js, data.css);
+      updateLandingVisibility();
       showLanding();
     });
   });
@@ -413,7 +507,7 @@ loadSiteData();
 
 // Save button
 const saveIconHTML = saveBtn.innerHTML;
-const checkIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+const checkIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>SAVED</span>`;
 
 saveBtn.addEventListener('click', () => {
   const jsCode = jsEditor ? jsEditor.getValue() : '';
@@ -426,12 +520,10 @@ saveBtn.addEventListener('click', () => {
     hasContent = newHasContent;
     isEnabled = newEnabled;
 
-    statusText.innerHTML = hasContent
-      ? `Boost is <strong>${isEnabled ? 'active' : 'paused'}</strong> on <strong>${currentHost}</strong>.`
-      : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
-
-    updateToggleIcon(isEnabled);
-    updateReloadIcon();
+    // Update status
+    updateStatusLED(isEnabled, hasContent);
+    updateToggleButton(isEnabled);
+    updateTechnicalInfo(jsCode, cssCode);
 
     saveBtn.innerHTML = checkIconHTML;
     setTimeout(() => saveBtn.innerHTML = saveIconHTML, 1500);
@@ -442,11 +534,8 @@ saveBtn.addEventListener('click', () => {
 toggleBtn.addEventListener('click', () => {
   isEnabled = !isEnabled;
 
-  statusText.innerHTML = hasContent
-    ? `Boost is <strong>${isEnabled ? 'active' : 'paused'}</strong> on <strong>${currentHost}</strong>.`
-    : `No Boost script yet for <strong>${currentHost}</strong>. Tap the pen to create one.`;
-
-  updateToggleIcon(isEnabled);
+  updateStatusLED(isEnabled, hasContent);
+  updateToggleButton(isEnabled);
 
   const jsCode = jsEditor ? jsEditor.getValue() : '';
   const cssCode = cssEditor ? cssEditor.getValue() : '';
@@ -466,7 +555,8 @@ reloadBtn.addEventListener('click', () => {
     const jsCode = jsEditor ? jsEditor.getValue() : '';
     const cssCode = cssEditor ? cssEditor.getValue() : '';
     saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, () => {
-      updateReloadIcon();
+      updateStatusLED(isEnabled, hasContent);
+      updateToggleButton(isEnabled);
       chrome.tabs.reload(currentTabId);
     });
   }
