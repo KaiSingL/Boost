@@ -62,6 +62,9 @@ const toggleText = document.getElementById('toggle-text');
 const editBtn = document.getElementById('edit-btn');
 const createBtn = document.getElementById('create-btn');
 
+// Version display
+const versionText = document.getElementById('version-text');
+
 // Constants
 const CHUNK_SIZE = 7000;
 const MAX_LOGS = 500;
@@ -146,6 +149,7 @@ function initCodeMirror() {
       lineWrapping: true,
       tabSize: 2,
       indentWithTabs: false,
+      inputStyle: 'contenteditable', // Better mobile support
       extraKeys: {
         'Tab': function(cm) {
           cm.replaceSelection('  ', 'end');
@@ -164,6 +168,7 @@ function initCodeMirror() {
       lineWrapping: true,
       tabSize: 2,
       indentWithTabs: false,
+      inputStyle: 'contenteditable', // Better mobile support
       extraKeys: {
         'Tab': function(cm) {
           cm.replaceSelection('  ', 'end');
@@ -504,6 +509,20 @@ function loadSiteData() {
 }
 
 loadSiteData();
+
+// Load version from manifest
+function loadVersion() {
+  try {
+    const manifest = chrome.runtime.getManifest();
+    if (manifest && manifest.version) {
+      versionText.textContent = 'v' + manifest.version;
+    }
+  } catch (e) {
+    console.log('Could not load version:', e);
+  }
+}
+
+loadVersion();
 
 // Save button
 const saveIconHTML = saveBtn.innerHTML;
