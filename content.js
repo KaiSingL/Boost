@@ -48,6 +48,14 @@
   function loadField(baseKey, cb) {
     sendLog('content', `Loading field ${baseKey}`);
     chrome.storage.sync.get(`${baseKey}_chunks`, items => {
+      if (chrome.runtime.lastError) {
+        const errorMsg = chrome.runtime.lastError.message;
+        sendLog('content', `LOAD ERROR for ${baseKey}_chunks: ${errorMsg}`);
+        console.error('Boost content load error:', errorMsg);
+        cb('');
+        return;
+      }
+
       const numChunks = items[`${baseKey}_chunks`] || 0;
       sendLog('content', `Num chunks for ${baseKey}: ${numChunks}`);
       if (numChunks === 0) {
@@ -61,9 +69,28 @@
       }
 
       chrome.storage.sync.get(chunkKeys, ch => {
+        if (chrome.runtime.lastError) {
+          const errorMsg = chrome.runtime.lastError.message;
+          sendLog('content', `LOAD ERROR for ${baseKey} chunks: ${errorMsg}`);
+          console.error('Boost content load error:', errorMsg);
+          cb('');
+          return;
+        }
+
         let value = '';
+        let missingChunks = 0;
         for (let i = 0; i < numChunks; i++) {
-          value += ch[`${baseKey}_${i}`] || '';
+          const chunk = ch[`${baseKey}_${i}`];
+          if (chunk) {
+            value += chunk;
+          } else {
+            missingChunks++;
+            sendLog('content', `LOAD WARNING: Missing chunk ${baseKey}_${i}`);
+          }
+        }
+
+        if (missingChunks > 0) {
+          sendLog('content', `LOAD WARNING: ${missingChunks}/${numChunks} chunks missing for ${baseKey}`);
         }
         cb(value);
       });
@@ -74,6 +101,14 @@
   function loadData(host, callback) {
     sendLog('content', `Checking old format for ${host}`);
     chrome.storage.sync.get(host, items => {
+      if (chrome.runtime.lastError) {
+        const errorMsg = chrome.runtime.lastError.message;
+        sendLog('content', `LOAD ERROR checking old format for ${host}: ${errorMsg}`);
+        console.error('Boost content load error:', errorMsg);
+        callback({ js: '', css: '', enabled: false });
+        return;
+      }
+
       if (items[host]) {
         // Old single-key format: migrate to chunked + encoded
         const oldData = items[host];
@@ -102,7 +137,16 @@
         chunkAndSet(`${host}_css`, encodedCss, sets);
         sendLog('content', `Migration: Encoded JS (${encodedJs.length}), CSS (${encodedCss.length})`);
         chrome.storage.sync.set(sets, () => {
+          if (chrome.runtime.lastError) {
+            sendLog('content', `MIGRATION ERROR for ${host}: ${chrome.runtime.lastError.message}`);
+            // Return old data anyway
+            callback(oldData);
+            return;
+          }
           chrome.storage.sync.remove(host, () => {
+            if (chrome.runtime.lastError) {
+              sendLog('content', `MIGRATION WARNING: Failed to remove old format for ${host}: ${chrome.runtime.lastError.message}`);
+            }
             sendLog('content', `Migration complete for ${host}`);
             callback(oldData);
           });
@@ -113,6 +157,14 @@
       // Load from chunked format (encoded)
       sendLog('content', `Loading chunked format for ${host}`);
       chrome.storage.sync.get(`${host}_enabled`, en => {
+        if (chrome.runtime.lastError) {
+          const errorMsg = chrome.runtime.lastError.message;
+          sendLog('content', `LOAD ERROR for ${host}_enabled: ${errorMsg}`);
+          console.error('Boost content load error:', errorMsg);
+          callback({ js: '', css: '', enabled: false });
+          return;
+        }
+
         const enabled = en[`${host}_enabled`] === true;
         sendLog('content', `Enabled? ${enabled}`);
         loadField(`${host}_js`, encodedJs => {

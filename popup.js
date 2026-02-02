@@ -362,12 +362,23 @@ function saveData(host, data, cb) {
   chunkAndSet(`${host}_js`, encodedJs, sets);
   chunkAndSet(`${host}_css`, encodedCss, sets);
 
+  const numKeys = Object.keys(sets).length;
+  const estimatedSize = JSON.stringify(sets).length;
+  log('popup', `SAVE: Preparing to store ${numKeys} keys, ~${estimatedSize} bytes total`);
+
   if (totalSize > 100000) {
     log('popup', 'SAVE: Large script detected (>100KB) - using chunks + base64');
   }
 
   chrome.storage.sync.set(sets, () => {
-    log('popup', `SAVE: Chunked save complete for ${host}`);
+    if (chrome.runtime.lastError) {
+      const errorMsg = chrome.runtime.lastError.message;
+      log('popup', `SAVE ERROR for ${host}: ${errorMsg}`);
+      console.error('Boost save error:', errorMsg);
+      if (cb) cb(new Error(errorMsg));
+      return;
+    }
+    log('popup', `SAVE: Chunked save complete for ${host} (${numKeys} keys stored)`);
     lastModified = sets[`${host}_modified`];
     if (cb) cb();
   });
@@ -375,7 +386,17 @@ function saveData(host, data, cb) {
 
 function loadField(baseKey, cb) {
   chrome.storage.sync.get(`${baseKey}_chunks`, items => {
+    if (chrome.runtime.lastError) {
+      const errorMsg = chrome.runtime.lastError.message;
+      log('popup', `LOAD ERROR for ${baseKey}_chunks: ${errorMsg}`);
+      console.error('Boost load error:', errorMsg);
+      cb('');
+      return;
+    }
+
     const numChunks = items[`${baseKey}_chunks`] || 0;
+    log('popup', `LOAD: ${baseKey} has ${numChunks} chunks`);
+
     if (numChunks === 0) {
       cb('');
       return;
@@ -387,9 +408,30 @@ function loadField(baseKey, cb) {
     }
 
     chrome.storage.sync.get(chunkKeys, ch => {
+      if (chrome.runtime.lastError) {
+        const errorMsg = chrome.runtime.lastError.message;
+        log('popup', `LOAD ERROR for ${baseKey} chunks: ${errorMsg}`);
+        console.error('Boost load error:', errorMsg);
+        cb('');
+        return;
+      }
+
       let value = '';
+      let missingChunks = 0;
       for (let i = 0; i < numChunks; i++) {
-        value += ch[`${baseKey}_${i}`] || '';
+        const chunk = ch[`${baseKey}_${i}`];
+        if (chunk) {
+          value += chunk;
+        } else {
+          missingChunks++;
+          log('popup', `LOAD WARNING: Missing chunk ${baseKey}_${i}`);
+        }
+      }
+
+      if (missingChunks > 0) {
+        log('popup', `LOAD WARNING: ${missingChunks}/${numChunks} chunks missing for ${baseKey}`);
+      } else {
+        log('popup', `LOAD: Successfully loaded ${value.length} chars from ${numChunks} chunks for ${baseKey}`);
       }
       cb(value);
     });
@@ -400,11 +442,27 @@ function loadData(host, callback) {
   log('popup', `LOAD: Starting load for ${host}`);
 
   chrome.storage.sync.get(host, items => {
+    if (chrome.runtime.lastError) {
+      const errorMsg = chrome.runtime.lastError.message;
+      log('popup', `LOAD ERROR checking old format for ${host}: ${errorMsg}`);
+      console.error('Boost load error:', errorMsg);
+      callback({ js: '', css: '', enabled: false });
+      return;
+    }
+
     if (items[host]) {
       const oldData = items[host];
       log('popup', `LOAD: Old format found, migrating for ${host}`);
-      saveData(host, oldData, () => {
+      saveData(host, oldData, (err) => {
+        if (err) {
+          log('popup', `LOAD: Migration failed for ${host}: ${err.message}`);
+          callback(oldData);
+          return;
+        }
         chrome.storage.sync.remove(host, () => {
+          if (chrome.runtime.lastError) {
+            log('popup', `LOAD WARNING: Failed to remove old format for ${host}: ${chrome.runtime.lastError.message}`);
+          }
           log('popup', `LOAD: Migration complete for ${host}`);
           callback(oldData);
         });
@@ -414,15 +472,24 @@ function loadData(host, callback) {
 
     log('popup', `LOAD: Loading chunked format for ${host}`);
     chrome.storage.sync.get([`${host}_enabled`, `${host}_modified`], items => {
+      if (chrome.runtime.lastError) {
+        const errorMsg = chrome.runtime.lastError.message;
+        log('popup', `LOAD ERROR for ${host} metadata: ${errorMsg}`);
+        console.error('Boost load error:', errorMsg);
+        callback({ js: '', css: '', enabled: false });
+        return;
+      }
+
       const enabled = items[`${host}_enabled`] === true;
       lastModified = items[`${host}_modified`] || null;
+      log('popup', `LOAD: ${host} enabled=${enabled}, modified=${lastModified || 'never'}`);
       
       loadField(`${host}_js`, encodedJs => {
         const js = decodeScript(encodedJs);
         loadField(`${host}_css`, encodedCss => {
           const css = decodeScript(encodedCss);
           const data = { js, css, enabled };
-          log('popup', `LOAD: Data loaded for ${host} (js:${js.length}, css:${css.length})`);
+          log('popup', `LOAD: Data loaded for ${host} (js:${js.length}, css:${css.length}, enabled:${enabled})`);
           callback(data);
         });
       });
@@ -527,6 +594,7 @@ loadVersion();
 // Save button
 const saveIconHTML = saveBtn.innerHTML;
 const checkIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>SAVED</span>`;
+const errorIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>ERROR</span>`;
 
 saveBtn.addEventListener('click', () => {
   const jsCode = jsEditor ? jsEditor.getValue() : '';
@@ -535,7 +603,24 @@ saveBtn.addEventListener('click', () => {
   const newHasContent = jsCode.trim().length > 0 || cssCode.trim().length > 0;
   const newEnabled = newHasContent ? isEnabled : false;
 
-  saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, () => {
+  saveBtn.disabled = true;
+  saveBtn.style.opacity = '0.6';
+
+  saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, (err) => {
+    saveBtn.disabled = false;
+    saveBtn.style.opacity = '1';
+
+    if (err) {
+      log('popup', `Save failed for ${currentHost}: ${err.message}`);
+      saveBtn.innerHTML = errorIconHTML;
+      saveBtn.style.background = '#dc3545';
+      setTimeout(() => {
+        saveBtn.innerHTML = saveIconHTML;
+        saveBtn.style.background = '';
+      }, 2000);
+      return;
+    }
+
     hasContent = newHasContent;
     isEnabled = newEnabled;
 
@@ -559,7 +644,11 @@ toggleBtn.addEventListener('click', () => {
   const jsCode = jsEditor ? jsEditor.getValue() : '';
   const cssCode = cssEditor ? cssEditor.getValue() : '';
 
-  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, () => { });
+  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, (err) => {
+    if (err) {
+      log('popup', `Toggle save failed for ${currentHost}: ${err.message}`);
+    }
+  });
 
   chrome.tabs.reload(currentTabId);
 });
@@ -573,7 +662,11 @@ reloadBtn.addEventListener('click', () => {
     isEnabled = newEnabled;
     const jsCode = jsEditor ? jsEditor.getValue() : '';
     const cssCode = cssEditor ? cssEditor.getValue() : '';
-    saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, () => {
+    saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, (err) => {
+      if (err) {
+        log('popup', `Reload save failed for ${currentHost}: ${err.message}`);
+        return;
+      }
       updateStatusLED(isEnabled, hasContent);
       updateToggleButton(isEnabled);
       chrome.tabs.reload(currentTabId);

@@ -79,10 +79,24 @@ async function loadCode(baseKey) {
   const countKey = `${baseKey}_chunks`;
   const { [countKey]: count = 0 } = await chrome.storage.sync.get(countKey);
 
+  if (chrome.runtime.lastError) {
+    const errorMsg = chrome.runtime.lastError.message;
+    log('background', `LOAD ERROR for ${countKey}: ${errorMsg}`);
+    console.error('Boost background load error:', errorMsg);
+    return '';
+  }
+
   if (count === 0) return '';
 
   const keys = Array.from({ length: count }, (_, i) => `${baseKey}_${i}`);
   const chunks = await chrome.storage.sync.get(keys);
+
+  if (chrome.runtime.lastError) {
+    const errorMsg = chrome.runtime.lastError.message;
+    log('background', `LOAD ERROR for ${baseKey} chunks: ${errorMsg}`);
+    console.error('Boost background load error:', errorMsg);
+    return '';
+  }
 
   let encoded = keys.reduce((acc, key) => acc + (chunks[key] ?? ''), '');
   const decoded = decodeScript(encoded);
@@ -116,6 +130,11 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   const enabledKey = `${hostname}_enabled`;
   const enabledRes = await chrome.storage.sync.get(enabledKey);
 
+  if (chrome.runtime.lastError) {
+    log('background', `LOAD ERROR for ${enabledKey}: ${chrome.runtime.lastError.message}`);
+    return;
+  }
+
   let jsCode = '';
   let cssCode = '';
   let enabled = false;
@@ -132,13 +151,18 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   } else {
     // Fallback to old single-object format
     const oldRes = await chrome.storage.sync.get([hostname]);
-    const oldData = oldRes[hostname];
 
-    if (oldData?.enabled) {
-      enabled = true;
-      jsCode = oldData.js || '';
-      cssCode = oldData.css || '';
-      log('background', `Loaded old format: JS ${jsCode.length}, CSS ${cssCode.length} chars`);
+    if (chrome.runtime.lastError) {
+      log('background', `LOAD ERROR for old format ${hostname}: ${chrome.runtime.lastError.message}`);
+    } else {
+      const oldData = oldRes[hostname];
+
+      if (oldData?.enabled) {
+        enabled = true;
+        jsCode = oldData.js || '';
+        cssCode = oldData.css || '';
+        log('background', `Loaded old format: JS ${jsCode.length}, CSS ${cssCode.length} chars`);
+      }
     }
   }
 
