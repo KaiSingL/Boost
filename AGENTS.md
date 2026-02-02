@@ -101,6 +101,22 @@ const CHUNK_SIZE = 7000;
 // Enabled: `${host}_enabled`
 ```
 
+**Orion Browser Special Handling:**
+Orion on iOS has a bug where `chrome.storage.sync` and `chrome.storage.local` share the same storage space, causing data corruption and loss. The extension detects Orion and automatically switches to `chrome.storage.local` to avoid this issue.
+
+```javascript
+// Orion detection
+const isOrionBrowser = /Orion/i.test(navigator.userAgent) || 
+  (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome') && 
+   /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent));
+
+// Use local storage for Orion
+const storageApi = isOrionBrowser ? chrome.storage.local : chrome.storage.sync;
+const STORAGE_TYPE = isOrionBrowser ? 'local' : 'sync';
+```
+
+All three main files (popup.js, background.js, content.js) use the same `storageApi` variable to ensure consistent storage behavior across the extension.
+
 **Base64 Encoding:**
 All scripts are base64-encoded with Unicode support:
 ```javascript
