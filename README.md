@@ -5,7 +5,7 @@ A powerful, mobile-friendly browser extension that allows you to edit and inject
 ## ✨ Features
 
 ### Core Features
-- **Cross-Platform Compatibility**: Works seamlessly on both desktop browsers and mobile browsers including Orion on iOS
+- **Cross-Platform Compatibility**: Works seamlessly on both desktop browsers and mobile browsers including Orion on iOS (with special storage handling)
 - **Per-Domain Customization**: Apply different JavaScript and CSS scripts to different websites
 - **Real-time Injection**: Scripts are injected immediately when enabled
 - **Syntax Highlighting**: Code editors with JavaScript and CSS syntax highlighting using Prism.js
@@ -139,6 +139,23 @@ Large scripts are automatically split into 7000-character chunks:
 - Responsive layout with safe area padding
 - Optimized injection pipeline for mobile browsers
 
+### Orion Browser Compatibility (iOS)
+Orion browser on iOS has a known bug where `chrome.storage.sync` and `chrome.storage.local` share the same storage space, which causes:
+- Data corruption when both storage types are used
+- Loss of saved scripts and settings
+- Inconsistent toggle states
+
+**Our Solution:**
+- Automatic Orion detection via User-Agent analysis
+- Transparent switching to `chrome.storage.local` exclusively
+- Proper cleanup of old chunk keys when saving empty content
+- Consistent storage behavior across popup.js, background.js, and content.js
+
+**Benefits:**
+- Higher storage quota (5MB vs ~100KB for sync)
+- Faster operations without cloud sync overhead
+- Reliable data persistence across Orion sessions
+
 ## 📖 Usage Guide
 
 ### Interface Overview
@@ -189,6 +206,16 @@ Large scripts are automatically split into 7000-character chunks:
   - Ensure iCloud sync is enabled and working
   - Try clearing browser cache and data
   - Update browser to latest version
+
+#### Orion Browser Storage Issues (iOS)
+- **Issue**: Scripts or toggle states not persisting on Orion browser
+- **Root Cause**: Orion has a bug where `chrome.storage.sync` and `chrome.storage.local` share the same storage space, causing data corruption and loss
+- **Solution**: The extension automatically detects Orion and uses `chrome.storage.local` exclusively to avoid this bug. This is handled transparently - no user action required.
+- **If issues persist**:
+  - Update to the latest version of the extension (v2.4.0+)
+  - Clear existing extension data in Orion settings
+  - Reinstall the extension if necessary
+  - Check the log view for "Using local storage (Orion detected)" message
 
 #### Storage Errors
 - **Issue**: Scripts not saving or loading properly
@@ -281,7 +308,8 @@ log('source', 'message')
 
 ### Storage Security
 - **Local storage**: Scripts stored in `chrome.storage.local`
-- **Sync storage**: Available across devices via `chrome.storage.sync`
+- **Sync storage**: Available across devices via `chrome.storage.sync` (desktop browsers only)
+- **Orion browser**: Uses `chrome.storage.local` exclusively to avoid a browser bug where sync and local storage collide
 - **Encryption**: Data stored as-is (browser handles encryption)
 - **Access control**: Only accessible by the extension
 
