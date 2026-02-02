@@ -10,6 +10,14 @@
                          (/Macintosh/i.test(navigator.userAgent) && 'ontouchend' in document);
   if (!isMobileDevice) return;
 
+  // Orion Browser Detection and Storage Strategy
+  // Orion has a bug where storage.sync and storage.local share the same space
+  const isOrionBrowser = /Orion/i.test(navigator.userAgent) || 
+    (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome') && 
+     /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent));
+  const storageApi = isOrionBrowser ? chrome.storage.local : chrome.storage.sync;
+  const STORAGE_TYPE = isOrionBrowser ? 'local' : 'sync';
+
   // Send log via message to background
   function sendLog(source, message) {
     chrome.runtime.sendMessage({ type: 'log', source, message }, () => {
@@ -18,7 +26,7 @@
     console.log(`[${source}] ${message}`); // Still log to page console
   }
 
-  sendLog('content', `Proceeding with injection for ${hostname}`);
+  sendLog('content', `Proceeding with injection for ${hostname} (using ${STORAGE_TYPE} storage${isOrionBrowser ? ', Orion detected' : ''})`);
 
   // Helpers for base64 encoding/decoding to avoid escaping issues
   function encodeScript(script) {
@@ -47,7 +55,7 @@
   // Callback-based loadField for chunks (raw encoded string)
   function loadField(baseKey, cb) {
     sendLog('content', `Loading field ${baseKey}`);
-    chrome.storage.sync.get(`${baseKey}_chunks`, items => {
+    storageApi.get(`${baseKey}_chunks`, items => {
       if (chrome.runtime.lastError) {
         const errorMsg = chrome.runtime.lastError.message;
         sendLog('content', `LOAD ERROR for ${baseKey}_chunks: ${errorMsg}`);
@@ -68,7 +76,7 @@
         chunkKeys.push(`${baseKey}_${i}`);
       }
 
-      chrome.storage.sync.get(chunkKeys, ch => {
+      storageApi.get(chunkKeys, ch => {
         if (chrome.runtime.lastError) {
           const errorMsg = chrome.runtime.lastError.message;
           sendLog('content', `LOAD ERROR for ${baseKey} chunks: ${errorMsg}`);
@@ -100,7 +108,7 @@
   // Load data with old-format migration to chunks + base64, then chunked load
   function loadData(host, callback) {
     sendLog('content', `Checking old format for ${host}`);
-    chrome.storage.sync.get(host, items => {
+    storageApi.get(host, items => {
       if (chrome.runtime.lastError) {
         const errorMsg = chrome.runtime.lastError.message;
         sendLog('content', `LOAD ERROR checking old format for ${host}: ${errorMsg}`);
@@ -136,14 +144,14 @@
         chunkAndSet(`${host}_js`, encodedJs, sets);
         chunkAndSet(`${host}_css`, encodedCss, sets);
         sendLog('content', `Migration: Encoded JS (${encodedJs.length}), CSS (${encodedCss.length})`);
-        chrome.storage.sync.set(sets, () => {
+        storageApi.set(sets, () => {
           if (chrome.runtime.lastError) {
             sendLog('content', `MIGRATION ERROR for ${host}: ${chrome.runtime.lastError.message}`);
             // Return old data anyway
             callback(oldData);
             return;
           }
-          chrome.storage.sync.remove(host, () => {
+          storageApi.remove(host, () => {
             if (chrome.runtime.lastError) {
               sendLog('content', `MIGRATION WARNING: Failed to remove old format for ${host}: ${chrome.runtime.lastError.message}`);
             }
@@ -156,7 +164,7 @@
 
       // Load from chunked format (encoded)
       sendLog('content', `Loading chunked format for ${host}`);
-      chrome.storage.sync.get(`${host}_enabled`, en => {
+      storageApi.get(`${host}_enabled`, en => {
         if (chrome.runtime.lastError) {
           const errorMsg = chrome.runtime.lastError.message;
           sendLog('content', `LOAD ERROR for ${host}_enabled: ${errorMsg}`);

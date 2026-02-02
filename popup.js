@@ -14,6 +14,19 @@
   window.isMobileDevice = isMobileDevice;
 })();
 
+// Orion Browser Detection and Storage Strategy
+// Orion has a bug where storage.sync and storage.local share the same space
+// causing data corruption. We use storage.local for Orion to avoid this.
+const isOrionBrowser = /Orion/i.test(navigator.userAgent) || 
+  (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome') && 
+   /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent));
+
+// Use local storage for Orion to avoid sync/local collision bug
+const storageApi = isOrionBrowser ? chrome.storage.local : chrome.storage.sync;
+const STORAGE_TYPE = isOrionBrowser ? 'local' : 'sync';
+
+console.log(`Boost: Using ${STORAGE_TYPE} storage${isOrionBrowser ? ' (Orion detected)' : ''}`);
+
 // CodeMirror editor instances
 let jsEditor = null;
 let cssEditor = null;
@@ -332,8 +345,12 @@ clearBtn.addEventListener('click', clearLogs);
 
 // Chunk functions
 function chunkAndSet(baseKey, value, sets) {
+  const chunkCountKey = `${baseKey}_chunks`;
+  
   if (value.length === 0) {
-    sets[`${baseKey}_chunks`] = 0;
+    // Mark for deletion - don't just set count to 0
+    sets[chunkCountKey] = 0;
+    sets[`${baseKey}_delete_marker`] = true; // Signal to delete old chunks
     return;
   }
 
@@ -342,7 +359,7 @@ function chunkAndSet(baseKey, value, sets) {
     chunks.push(value.substring(i, i + CHUNK_SIZE));
   }
 
-  sets[`${baseKey}_chunks`] = chunks.length;
+  sets[chunkCountKey] = chunks.length;
   chunks.forEach((chunk, i) => {
     sets[`${baseKey}_${i}`] = chunk;
   });
@@ -351,16 +368,37 @@ function chunkAndSet(baseKey, value, sets) {
 function saveData(host, data, cb) {
   const totalSize = (data.js || '').length + (data.css || '').length;
   log('popup', `SAVE: Starting chunked save for ${host} (raw size: ${totalSize} chars)`);
+  log('popup', `SAVE: Using ${STORAGE_TYPE} storage API`);
 
   const encodedJs = encodeScript(data.js || '');
   const encodedCss = encodeScript(data.css || '');
   log('popup', `SAVE: Encoded JS (${encodedJs.length} chars), CSS (${encodedCss.length} chars)`);
 
   const sets = {};
+  const keysToDelete = [];
   sets[`${host}_enabled`] = data.enabled;
   sets[`${host}_modified`] = new Date().toISOString();
+  
+  // Get chunk info for potential deletion
   chunkAndSet(`${host}_js`, encodedJs, sets);
   chunkAndSet(`${host}_css`, encodedCss, sets);
+
+  // If we're clearing data, collect old chunk keys to delete
+  if (sets[`${host}_js_delete_marker`]) {
+    // We need to find out how many old chunks exist and delete them
+    // For now, we'll delete a reasonable range (up to 100 chunks = ~700KB)
+    for (let i = 0; i < 100; i++) {
+      keysToDelete.push(`${host}_js_${i}`);
+    }
+    delete sets[`${host}_js_delete_marker`];
+  }
+  
+  if (sets[`${host}_css_delete_marker`]) {
+    for (let i = 0; i < 100; i++) {
+      keysToDelete.push(`${host}_css_${i}`);
+    }
+    delete sets[`${host}_css_delete_marker`];
+  }
 
   const numKeys = Object.keys(sets).length;
   const estimatedSize = JSON.stringify(sets).length;
@@ -370,22 +408,37 @@ function saveData(host, data, cb) {
     log('popup', 'SAVE: Large script detected (>100KB) - using chunks + base64');
   }
 
-  chrome.storage.sync.set(sets, () => {
-    if (chrome.runtime.lastError) {
-      const errorMsg = chrome.runtime.lastError.message;
-      log('popup', `SAVE ERROR for ${host}: ${errorMsg}`);
-      console.error('Boost save error:', errorMsg);
-      if (cb) cb(new Error(errorMsg));
-      return;
-    }
-    log('popup', `SAVE: Chunked save complete for ${host} (${numKeys} keys stored)`);
-    lastModified = sets[`${host}_modified`];
-    if (cb) cb();
-  });
+  // First delete old chunk keys if any, then save new data
+  const performSave = () => {
+    storageApi.set(sets, () => {
+      if (chrome.runtime.lastError) {
+        const errorMsg = chrome.runtime.lastError.message;
+        log('popup', `SAVE ERROR for ${host}: ${errorMsg}`);
+        console.error('Boost save error:', errorMsg);
+        if (cb) cb(new Error(errorMsg));
+        return;
+      }
+      log('popup', `SAVE: Chunked save complete for ${host} (${numKeys} keys stored)`);
+      lastModified = sets[`${host}_modified`];
+      if (cb) cb();
+    });
+  };
+
+  if (keysToDelete.length > 0) {
+    log('popup', `SAVE: Deleting ${keysToDelete.length} old chunk keys`);
+    storageApi.remove(keysToDelete, () => {
+      if (chrome.runtime.lastError) {
+        log('popup', `SAVE WARNING: Error deleting old chunks: ${chrome.runtime.lastError.message}`);
+      }
+      performSave();
+    });
+  } else {
+    performSave();
+  }
 }
 
 function loadField(baseKey, cb) {
-  chrome.storage.sync.get(`${baseKey}_chunks`, items => {
+  storageApi.get(`${baseKey}_chunks`, items => {
     if (chrome.runtime.lastError) {
       const errorMsg = chrome.runtime.lastError.message;
       log('popup', `LOAD ERROR for ${baseKey}_chunks: ${errorMsg}`);
@@ -407,7 +460,7 @@ function loadField(baseKey, cb) {
       chunkKeys.push(`${baseKey}_${i}`);
     }
 
-    chrome.storage.sync.get(chunkKeys, ch => {
+    storageApi.get(chunkKeys, ch => {
       if (chrome.runtime.lastError) {
         const errorMsg = chrome.runtime.lastError.message;
         log('popup', `LOAD ERROR for ${baseKey} chunks: ${errorMsg}`);
@@ -441,7 +494,7 @@ function loadField(baseKey, cb) {
 function loadData(host, callback) {
   log('popup', `LOAD: Starting load for ${host}`);
 
-  chrome.storage.sync.get(host, items => {
+  storageApi.get(host, items => {
     if (chrome.runtime.lastError) {
       const errorMsg = chrome.runtime.lastError.message;
       log('popup', `LOAD ERROR checking old format for ${host}: ${errorMsg}`);
@@ -459,7 +512,7 @@ function loadData(host, callback) {
           callback(oldData);
           return;
         }
-        chrome.storage.sync.remove(host, () => {
+        storageApi.remove(host, () => {
           if (chrome.runtime.lastError) {
             log('popup', `LOAD WARNING: Failed to remove old format for ${host}: ${chrome.runtime.lastError.message}`);
           }
@@ -471,7 +524,7 @@ function loadData(host, callback) {
     }
 
     log('popup', `LOAD: Loading chunked format for ${host}`);
-    chrome.storage.sync.get([`${host}_enabled`, `${host}_modified`], items => {
+    storageApi.get([`${host}_enabled`, `${host}_modified`], items => {
       if (chrome.runtime.lastError) {
         const errorMsg = chrome.runtime.lastError.message;
         log('popup', `LOAD ERROR for ${host} metadata: ${errorMsg}`);

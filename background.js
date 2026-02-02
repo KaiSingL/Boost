@@ -2,6 +2,19 @@
 
 const isMobileDevice = /Android|iPhone|iPad|iPod|Macintosh.*(iPhone|iPad)/i.test(navigator.userAgent);
 
+// Orion Browser Detection and Storage Strategy
+// Orion has a bug where storage.sync and storage.local share the same space
+// causing data corruption. We use storage.local for Orion to avoid this.
+const isOrionBrowser = /Orion/i.test(navigator.userAgent) || 
+  (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome') && 
+   /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent));
+
+// Use local storage for Orion to avoid sync/local collision bug
+const storageApi = isOrionBrowser ? chrome.storage.local : chrome.storage.sync;
+const STORAGE_TYPE = isOrionBrowser ? 'local' : 'sync';
+
+console.log(`Boost background: Using ${STORAGE_TYPE} storage${isOrionBrowser ? ' (Orion detected)' : ''}`);
+
 const MAX_LOGS = 500;
 
 // Centralized log function
@@ -77,7 +90,7 @@ async function injectBoost(tabId, frameId, jsCode = '', cssCode = '', hostname =
 
 async function loadCode(baseKey) {
   const countKey = `${baseKey}_chunks`;
-  const { [countKey]: count = 0 } = await chrome.storage.sync.get(countKey);
+  const { [countKey]: count = 0 } = await storageApi.get(countKey);
 
   if (chrome.runtime.lastError) {
     const errorMsg = chrome.runtime.lastError.message;
@@ -89,7 +102,7 @@ async function loadCode(baseKey) {
   if (count === 0) return '';
 
   const keys = Array.from({ length: count }, (_, i) => `${baseKey}_${i}`);
-  const chunks = await chrome.storage.sync.get(keys);
+  const chunks = await storageApi.get(keys);
 
   if (chrome.runtime.lastError) {
     const errorMsg = chrome.runtime.lastError.message;
@@ -128,7 +141,7 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   log('background', `Injection check for ${hostname} (enabled key: ${hostname}_enabled)`);
 
   const enabledKey = `${hostname}_enabled`;
-  const enabledRes = await chrome.storage.sync.get(enabledKey);
+  const enabledRes = await storageApi.get(enabledKey);
 
   if (chrome.runtime.lastError) {
     log('background', `LOAD ERROR for ${enabledKey}: ${chrome.runtime.lastError.message}`);
@@ -150,7 +163,7 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
     }
   } else {
     // Fallback to old single-object format
-    const oldRes = await chrome.storage.sync.get([hostname]);
+    const oldRes = await storageApi.get([hostname]);
 
     if (chrome.runtime.lastError) {
       log('background', `LOAD ERROR for old format ${hostname}: ${chrome.runtime.lastError.message}`);
