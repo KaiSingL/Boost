@@ -562,6 +562,7 @@ body.mobile .CodeMirror {
   -webkit-user-select: text;
   user-select: text;
   -webkit-touch-callout: default;
+  font-size: 16px; /* Prevent iOS auto-zoom on focus - contenteditable needs 16px minimum */
 }
 
 body.mobile .CodeMirror-lines {
