@@ -43,6 +43,7 @@ body {
   flex-direction: column;
   width: 600px !important;
   height: auto !important;
+  max-height: 600px !important;
   min-height: 580px !important;
   background: var(--bg-canvas);
   font-family: var(--font-sans);
@@ -369,42 +370,6 @@ body.mobile .log-wrapper {
   color: var(--accent-cyan-dark);
 }
 
-/* Footer */
-.panel-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 8px;
-}
-
-.log-btn {
-  height: 28px;
-  padding: 0 12px;
-  background: transparent;
-  color: var(--text-muted);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  transition: all 0.15s ease;
-}
-
-.log-btn:hover {
-  border-color: var(--border-focus);
-  color: var(--text-primary);
-  background: var(--bg-panel);
-}
-
-.log-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
 /* Tabs */
 .tabs {
   display: flex;
@@ -589,4 +554,125 @@ body.mobile .storage-bar {
 
 body.mobile .storage-track {
   width: 100%;
+}
+
+/* Mobile CodeMirror improvements for better text selection */
+body.mobile .CodeMirror {
+  touch-action: pan-y;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+body.mobile .CodeMirror-lines {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+body.mobile .CodeMirror-line {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+  font-size: 16px;
+}
+
+body.mobile .CodeMirror-code {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Ensure cursor is visible on mobile */
+body.mobile .CodeMirror-cursor {
+  border-left-width: 2px;
+  border-left-color: var(--accent-cyan);
+}
+
+/* Improve tap target for line numbers on mobile */
+body.mobile .CodeMirror-linenumber {
+  padding: 0 8px;
+  min-width: 32px;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Prevent CodeMirror from blocking touch events on mobile */
+body.mobile .CodeMirror-scroll {
+  pointer-events: auto;
+}
+
+body.mobile .code-editor-wrapper {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Version Footer */
+.version-footer {
+  margin-top: auto;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-toolbar);
+}
+
+.version-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-label {
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.version-number {
+  font-weight: 500;
+  color: var(--accent-cyan-dark);
+}
+
+/* Log button in footer - compact style */
+.version-footer .log-btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.version-footer .log-btn:hover {
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+  background: var(--bg-panel);
+}
+
+.version-footer .log-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+body.mobile .version-footer {
+  padding: 10px 12px;
+  font-size: 10px;
+}
+
+body.mobile .version-footer .log-btn {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 9px;
 }
