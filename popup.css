@@ -617,8 +617,10 @@ body.mobile .code-editor-wrapper {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
-  border-top: 1px solid var(--border-default);
   background: var(--bg-toolbar);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .version-footer-left {
