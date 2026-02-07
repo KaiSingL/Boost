@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Boost",
-  "description": "Boost neo - Custom JavaScript & CSS Injector. Edit & inject custom JavaScript and CSS per domain - mobile friendly",
-  "version": "2.4.1",
+  "name": "Boost: Custom JavaScript & CSS Injector",
+  "description": "Custom JavaScript & CSS Injector. Edit & inject custom JavaScript and CSS per domain - mobile friendly",
+  "version": "2.5.1",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
