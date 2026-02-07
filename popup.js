@@ -426,6 +426,16 @@ saveBtn.addEventListener('click', () => {
       updateLandingVisibility();
       updateStatusLED(isEnabled, hasContent);
       updateTechnicalInfo(jsCode, cssCode);
+      
+      // Visual feedback - show "SAVED ✓" for 1.5 seconds
+      const originalText = saveBtn.querySelector('span').textContent;
+      saveBtn.classList.add('saved');
+      saveBtn.querySelector('span').textContent = 'SAVED \u2713';
+      
+      setTimeout(() => {
+        saveBtn.classList.remove('saved');
+        saveBtn.querySelector('span').textContent = originalText;
+      }, 1500);
     }
   });
 });

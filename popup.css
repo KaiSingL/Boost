@@ -189,6 +189,11 @@ body.mobile .log-wrapper {
   border-color: var(--accent-cyan-light);
 }
 
+.tool-btn.primary.saved:hover {
+  background: var(--accent-green);
+  border-color: var(--accent-green);
+}
+
 /* LED Status Indicator */
 .led-indicator {
   display: inline-flex;
