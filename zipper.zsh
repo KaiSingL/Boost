@@ -16,7 +16,15 @@ if [[ -f $zip_file ]]; then
 fi
 
 # Define exclusions
-exclusions=("examples" ".gitignore" "README.md","zipper.zsh", "AGENTS.md")
+exclusions=(
+    ".gitignore",
+    "examples", 
+    "README.md",
+    "AGENTS.md", 
+    "zipper.zsh", 
+    "zipper.ps1"
+    )
+    
 echo "DEBUG: Exclusions: ${exclusions[*]}" >&2
 
 # Create a temporary list of items to include

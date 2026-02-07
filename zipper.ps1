@@ -14,7 +14,15 @@ if (Test-Path $zipFile) {
 }
 
 # Define exclusions
-$exclusions = @("examples", ".gitignore", "README.md", "zipper.ps1", "AGENTS.md")
+$exclusions = @(
+    ".gitignore",
+    "examples", 
+    "README.md",
+    "AGENTS.md", 
+    "zipper.zsh", 
+    "zipper.ps1"
+)
+
 Write-Host "DEBUG: Exclusions: $($exclusions -join ', ')" -ForegroundColor Green
 
 # Get items to include, excluding the specified ones
