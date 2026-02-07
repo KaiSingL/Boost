@@ -1,4 +1,10 @@
+/* Theme transitions for all themed elements */
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
 :root {
+  /* Light theme variables (default) */
   --bg-canvas: #f0f0f0;
   --bg-panel: #ffffff;
   --bg-toolbar: #f8f8f8;
@@ -22,6 +28,55 @@
   --radius-md: 6px;
   --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, Monaco, 'Courier New', monospace;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Dark theme override - One Dark color palette */
+body.dark-theme {
+  --bg-canvas: #282c34;
+  --bg-panel: #2c313a;
+  --bg-toolbar: #21252b;
+  --bg-input: #3e4451;
+  --border-default: #3e4451;
+  --border-focus: #4b5363;
+  --text-primary: #abb2bf;
+  --text-secondary: #828997;
+  --text-muted: #5c6370;
+  --status-active: #00e676;
+}
+
+/* System theme - follows OS preference via media query */
+body.system-theme {
+  /* No variables here - handled by media queries below */
+}
+
+@media (prefers-color-scheme: dark) {
+  body.system-theme {
+    --bg-canvas: #282c34;
+    --bg-panel: #2c313a;
+    --bg-toolbar: #21252b;
+    --bg-input: #3e4451;
+    --border-default: #3e4451;
+    --border-focus: #4b5363;
+    --text-primary: #abb2bf;
+    --text-secondary: #828997;
+    --text-muted: #5c6370;
+    --status-active: #00e676;
+  }
+}
+
+/* CodeMirror theme toggle - CSS handles all theme switching */
+.cm-theme-hidden { display: none !important; }
+
+@media (prefers-color-scheme: dark) {
+  body.system-theme #cm-theme-light { display: none !important; }
+  body.system-theme #cm-theme-dark { display: block !important; }
+  body.light-theme #cm-theme-dark { display: none !important; }
+}
+
+@media (prefers-color-scheme: light) {
+  body.system-theme #cm-theme-dark { display: none !important; }
+  body.system-theme #cm-theme-light { display: block !important; }
+  body.dark-theme #cm-theme-light { display: none !important; }
 }
 
 * {
@@ -308,7 +363,7 @@ body.mobile .log-wrapper {
 
 .action-btn:hover {
   border-color: var(--border-focus);
-  background: #fff;
+  background: var(--bg-panel);
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
 }
@@ -337,6 +392,25 @@ body.mobile .log-wrapper {
   box-shadow: 
     inset 0 1px 2px rgba(0,0,0,0.1),
     0 0 4px var(--status-active);
+}
+
+/* Dark mode button hover overrides */
+body.dark-theme .action-btn:hover,
+body.system-theme .action-btn:hover {
+  background: var(--bg-input);
+  border-color: var(--border-focus);
+}
+
+body.dark-theme .tool-btn:hover,
+body.system-theme .tool-btn:hover {
+  background: var(--bg-input);
+  border-color: var(--border-focus);
+}
+
+body.dark-theme .version-footer .log-btn:hover,
+body.system-theme .version-footer .log-btn:hover {
+  background: var(--bg-input);
+  border-color: var(--border-focus);
 }
 
 /* Empty State */
@@ -606,6 +680,45 @@ body.mobile .code-editor-wrapper {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Dark mode CodeMirror - One Dark */
+body.dark-theme .CodeMirror {
+  background-color: #282c34 !important;
+}
+
+/* Dark mode gutter/line numbers */
+body.dark-theme .CodeMirror-gutters {
+  background-color: #282c34 !important;
+  border-right: 1px solid #3e4451 !important;
+}
+
+body.dark-theme .CodeMirror-linenumber {
+  color: #5c6370 !important;
+}
+
+body.dark-theme .CodeMirror-gutter-background {
+  background-color: #282c34 !important;
+}
+
+/* System theme CodeMirror - One Dark */
+@media (prefers-color-scheme: dark) {
+  body.system-theme .CodeMirror {
+    background-color: #282c34 !important;
+  }
+
+  body.system-theme .CodeMirror-gutters {
+    background-color: #282c34 !important;
+    border-right: 1px solid #3e4451 !important;
+  }
+
+  body.system-theme .CodeMirror-linenumber {
+    color: #5c6370 !important;
+  }
+
+  body.system-theme .CodeMirror-gutter-background {
+    background-color: #282c34 !important;
+  }
+}
+
 /* Version Footer */
 .version-footer {
   margin-top: auto;
@@ -678,4 +791,84 @@ body.mobile .version-footer .log-btn {
   height: 22px;
   padding: 0 6px;
   font-size: 9px;
+}
+
+/* Theme Segmented Control */
+.theme-segmented-control {
+  display: flex;
+  position: relative;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+
+.theme-option-btn {
+  flex: 1;
+  height: 24px;
+  min-width: 32px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+  position: relative;
+  z-index: 2;
+}
+
+.theme-option-btn:hover {
+  color: var(--text-secondary);
+}
+
+.theme-option-btn.active {
+  color: var(--text-primary);
+}
+
+.theme-option-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.theme-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(33.333% - 2px);
+  height: 24px;
+  background: var(--bg-panel);
+  border-radius: 3px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.25s cubic-bezier(0.4, 0.0, 0.2, 1);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.theme-option-btn[data-theme="system"].active ~ .theme-knob { transform: translateX(0%); }
+.theme-option-btn[data-theme="light"].active ~ .theme-knob { transform: translateX(100%); }
+.theme-option-btn[data-theme="dark"].active ~ .theme-knob { transform: translateX(200%); }
+
+body.dark-theme .theme-knob {
+  background: var(--bg-toolbar);
+}
+
+body.mobile .theme-segmented-control {
+  height: 26px;
+}
+
+body.mobile .theme-option-btn {
+  height: 26px;
+}
+
+body.mobile .theme-option-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+body.mobile .theme-knob {
+  height: 26px;
 }

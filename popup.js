@@ -39,6 +39,7 @@ let isEnabled = false;
 let hasContent = false;
 let currentView = 'landing';
 let lastModified = null;
+let currentTheme = 'system';
 
 // DOM elements
 const landing = document.getElementById('landing');
@@ -82,6 +83,8 @@ const versionText = document.getElementById('version-text');
 const CHUNK_SIZE = 7000;
 const MAX_LOGS = 500;
 const DISPLAY_LOGS = 100;
+const THEMES = ['system', 'light', 'dark'];
+const THEME_STORAGE_KEY = 'boost_theme';
 
 // Helpers
 function encodeScript(script) {
@@ -133,6 +136,52 @@ function formatDate(isoString) {
   return date.toLocaleDateString();
 }
 
+function getEffectiveTheme(theme) {
+  if (theme === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return prefersDark ? 'dark' : 'light';
+  }
+  return theme;
+}
+
+function applyTheme(theme) {
+  const effectiveTheme = getEffectiveTheme(theme);
+
+  document.body.classList.remove('light-theme', 'dark-theme', 'system-theme');
+  document.body.classList.add(theme + '-theme');
+
+  const lightLink = document.getElementById('cm-theme-light');
+  const darkLink = document.getElementById('cm-theme-dark');
+
+  if (effectiveTheme === 'light') {
+    lightLink.style.display = 'block';
+    darkLink.style.display = 'none';
+  } else if (effectiveTheme === 'dark') {
+    lightLink.style.display = 'none';
+    darkLink.style.display = 'block';
+  }
+
+  const cmTheme = effectiveTheme === 'dark' ? 'one-dark' : 'tomorrow-light';
+  if (jsEditor) jsEditor.setOption('theme', cmTheme);
+  if (cssEditor) cssEditor.setOption('theme', cmTheme);
+
+  if (jsEditor) jsEditor.refresh();
+  if (cssEditor) cssEditor.refresh();
+}
+
+function updateThemeUI(theme) {
+  currentTheme = theme;
+  
+  document.querySelectorAll('.theme-option-btn').forEach(btn => {
+    const isActive = btn.dataset.theme === theme;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-pressed', isActive);
+  });
+  
+  applyTheme(theme);
+  storageApi.set({ [THEME_STORAGE_KEY]: theme });
+}
+
 // CodeMirror initialization
 function waitForCodeMirror(callback, maxAttempts = 50) {
   let attempts = 0;
@@ -149,15 +198,18 @@ function waitForCodeMirror(callback, maxAttempts = 50) {
   check();
 }
 
-function initCodeMirror() {
+function initCodeMirror(theme) {
   if (editorsInitialized || typeof CodeMirror === 'undefined') return;
+
+  const effectiveTheme = theme ? getEffectiveTheme(theme) : 'light';
+  const cmTheme = effectiveTheme === 'dark' ? 'one-dark' : 'tomorrow-light';
 
   // Initialize JS editor
   const jsContainer = document.getElementById('js-editor');
   if (jsContainer && !jsEditor) {
     jsEditor = CodeMirror(jsContainer, {
       mode: 'javascript',
-      theme: 'tomorrow-light',
+      theme: cmTheme,
       lineNumbers: true,
       lineWrapping: true,
       tabSize: 2,
@@ -176,7 +228,7 @@ function initCodeMirror() {
   if (cssContainer && !cssEditor) {
     cssEditor = CodeMirror(cssContainer, {
       mode: 'css',
-      theme: 'tomorrow-light',
+      theme: cmTheme,
       lineNumbers: true,
       lineWrapping: true,
       tabSize: 2,
@@ -191,7 +243,7 @@ function initCodeMirror() {
   }
 
   editorsInitialized = true;
-  console.log('CodeMirror editors initialized');
+  console.log('CodeMirror editors initialized with theme:', cmTheme);
 }
 
 // LED Status Updates
@@ -288,7 +340,7 @@ function showEditor() {
   // Initialize editors if not already done
   if (!editorsInitialized) {
     waitForCodeMirror(() => {
-      initCodeMirror();
+      initCodeMirror(currentTheme);
       if (jsEditor) jsEditor.refresh();
       if (cssEditor) cssEditor.refresh();
     });
@@ -342,6 +394,48 @@ editBtn.addEventListener('click', showEditor);
 createBtn.addEventListener('click', showEditor);
 logBtn.addEventListener('click', showLog);
 clearBtn.addEventListener('click', clearLogs);
+
+toggleBtn.addEventListener('click', () => {
+  isEnabled = !isEnabled;
+  
+  updateStatusLED(isEnabled, hasContent);
+  updateToggleButton(isEnabled);
+  
+  const jsCode = jsEditor ? jsEditor.getValue() : '';
+  const cssCode = cssEditor ? cssEditor.getValue() : '';
+  
+  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, (err) => {
+    if (err) {
+      log('popup', `Toggle save failed for ${currentHost}: ${err.message}`);
+    }
+  });
+  
+  chrome.tabs.reload(currentTabId);
+});
+
+saveBtn.addEventListener('click', () => {
+  const jsCode = jsEditor ? jsEditor.getValue() : '';
+  const cssCode = cssEditor ? cssEditor.getValue() : '';
+  
+  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, (err) => {
+    if (err) {
+      log('popup', `Save failed for ${currentHost}: ${err.message}`);
+    } else {
+      log('popup', `Saved script for ${currentHost}`);
+      hasContent = jsCode.trim().length > 0 || cssCode.trim().length > 0;
+      updateLandingVisibility();
+      updateStatusLED(isEnabled, hasContent);
+      updateTechnicalInfo(jsCode, cssCode);
+    }
+  });
+});
+
+reloadBtn.addEventListener('click', () => {
+  if (currentTabId) {
+    chrome.tabs.reload(currentTabId);
+    log('popup', `Reloaded tab ${currentTabId}`);
+  }
+});
 
 // Chunk functions
 function chunkAndSet(baseKey, value, sets) {
@@ -604,7 +698,7 @@ function loadSiteData() {
     loadData(currentHost, (data) => {
       // Initialize editors and set content
       waitForCodeMirror(() => {
-        initCodeMirror();
+        initCodeMirror(currentTheme);
 
         if (jsEditor) {
           jsEditor.setValue(data.js || '');
@@ -644,87 +738,17 @@ function loadVersion() {
 
 loadVersion();
 
-// Save button
-const saveIconHTML = saveBtn.innerHTML;
-const checkIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>SAVED</span>`;
-const errorIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>ERROR</span>`;
-
-saveBtn.addEventListener('click', () => {
-  const jsCode = jsEditor ? jsEditor.getValue() : '';
-  const cssCode = cssEditor ? cssEditor.getValue() : '';
-
-  const newHasContent = jsCode.trim().length > 0 || cssCode.trim().length > 0;
-  const newEnabled = newHasContent ? isEnabled : false;
-
-  saveBtn.disabled = true;
-  saveBtn.style.opacity = '0.6';
-
-  saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, (err) => {
-    saveBtn.disabled = false;
-    saveBtn.style.opacity = '1';
-
-    if (err) {
-      log('popup', `Save failed for ${currentHost}: ${err.message}`);
-      saveBtn.innerHTML = errorIconHTML;
-      saveBtn.style.background = '#dc3545';
-      setTimeout(() => {
-        saveBtn.innerHTML = saveIconHTML;
-        saveBtn.style.background = '';
-      }, 2000);
-      return;
-    }
-
-    hasContent = newHasContent;
-    isEnabled = newEnabled;
-
-    // Update status
-    updateStatusLED(isEnabled, hasContent);
-    updateToggleButton(isEnabled);
-    updateTechnicalInfo(jsCode, cssCode);
-
-    saveBtn.innerHTML = checkIconHTML;
-    setTimeout(() => saveBtn.innerHTML = saveIconHTML, 1500);
+// Initialize theme toggle
+document.querySelectorAll('.theme-option-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    updateThemeUI(btn.dataset.theme);
   });
 });
 
-// Toggle enable/disable
-toggleBtn.addEventListener('click', () => {
-  isEnabled = !isEnabled;
-
-  updateStatusLED(isEnabled, hasContent);
-  updateToggleButton(isEnabled);
-
-  const jsCode = jsEditor ? jsEditor.getValue() : '';
-  const cssCode = cssEditor ? cssEditor.getValue() : '';
-
-  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, (err) => {
-    if (err) {
-      log('popup', `Toggle save failed for ${currentHost}: ${err.message}`);
-    }
-  });
-
-  chrome.tabs.reload(currentTabId);
-});
-
-// Reload page button
-reloadBtn.addEventListener('click', () => {
-  if (!hasContent) {
-    chrome.tabs.reload(currentTabId);
-  } else {
-    const newEnabled = true;
-    isEnabled = newEnabled;
-    const jsCode = jsEditor ? jsEditor.getValue() : '';
-    const cssCode = cssEditor ? cssEditor.getValue() : '';
-    saveData(currentHost, { js: jsCode, css: cssCode, enabled: newEnabled }, (err) => {
-      if (err) {
-        log('popup', `Reload save failed for ${currentHost}: ${err.message}`);
-        return;
-      }
-      updateStatusLED(isEnabled, hasContent);
-      updateToggleButton(isEnabled);
-      chrome.tabs.reload(currentTabId);
-    });
-  }
+// Load saved theme or default to system
+storageApi.get(THEME_STORAGE_KEY, ({ [THEME_STORAGE_KEY]: savedTheme }) => {
+  const theme = savedTheme || 'system';
+  updateThemeUI(theme);
 });
 
 // Keyboard shortcuts
