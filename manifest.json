@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Boost: Custom JavaScript & CSS Injector",
+  "name": "Boost:  JavaScript & CSS Injector",
   "description": "Custom JavaScript & CSS Injector. Edit & inject custom JavaScript and CSS per domain - mobile friendly",
   "version": "2.5.1",
   "icons": {
