@@ -824,6 +824,9 @@ body.mobile .version-footer .log-btn {
   transition: color 0.15s ease;
   position: relative;
   z-index: 2;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .theme-option-btn:hover {
@@ -837,6 +840,8 @@ body.mobile .version-footer .log-btn {
 .theme-option-btn svg {
   width: 14px;
   height: 14px;
+  display: block;
+  flex-shrink: 0;
 }
 
 .theme-knob {
@@ -862,18 +867,50 @@ body.dark-theme .theme-knob {
 }
 
 body.mobile .theme-segmented-control {
-  height: 26px;
+  height: 32px;
+  padding: 3px;
+  box-sizing: border-box;
 }
 
 body.mobile .theme-option-btn {
   height: 26px;
+  min-height: 26px;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 body.mobile .theme-option-btn svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
+  display: block;
+  margin: auto;
 }
 
 body.mobile .theme-knob {
+  top: 3px;
+  left: 3px;
   height: 26px;
+  box-sizing: border-box;
+}
+
+/* Orion iOS specific fixes */
+body.orion .theme-segmented-control {
+  /* Prevent iOS from adding extra padding */
+  -webkit-padding-start: 3px;
+  -webkit-padding-end: 3px;
+}
+
+body.orion .theme-option-btn {
+  /* Force center alignment on Orion */
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  /* Reset any iOS default margins */
+  margin: 0;
+  /* Ensure proper box model */
+  box-sizing: border-box;
 }

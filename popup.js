@@ -12,6 +12,18 @@
   }
 
   window.isMobileDevice = isMobileDevice;
+
+  // Orion Browser Detection - Add class for CSS targeting
+  const isOrionBrowser = /Orion/i.test(navigator.userAgent) ||
+    (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome') &&
+     /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent));
+
+  if (isOrionBrowser) {
+    document.documentElement.classList.add('orion');
+    document.body.classList.add('orion');
+  }
+
+  window.isOrionBrowser = isOrionBrowser;
 })();
 
 // Orion Browser Detection and Storage Strategy
