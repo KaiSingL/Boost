@@ -47,9 +47,12 @@ let editorsInitialized = false;
 // State variables
 let currentHost = null;
 let currentTabId = null;
+let originalHost = null;
+let originalTabId = null;
 let isEnabled = false;
 let hasContent = false;
 let currentView = 'landing';
+let returnView = 'landing';
 let lastModified = null;
 let currentTheme = 'system';
 
@@ -337,7 +340,15 @@ function showLanding() {
   clearBtn.style.display = 'none';
   toolbarStatus.style.display = 'none';
   currentView = 'landing';
-  
+
+  // Restore current domain details
+  if (originalHost) {
+    currentHost = originalHost;
+    currentTabId = originalTabId;
+    domainText.textContent = currentHost;
+    emptyDomain.textContent = currentHost;
+  }
+
   // Update visibility based on hasContent
   updateLandingVisibility();
 }
@@ -432,13 +443,16 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 
 backBtn.addEventListener('click', () => {
-  if (currentView === 'editor') showLanding();
-  if (currentView === 'log') showLanding();
-  if (currentView === 'scripts-list') showLanding();
+  if (currentView === 'editor') {
+    if (returnView === 'scripts-list') { showScriptsList(); return; }
+    showLanding();
+    return;
+  }
+  showLanding();
 });
 
-editBtn.addEventListener('click', showEditor);
-createBtn.addEventListener('click', showEditor);
+editBtn.addEventListener('click', () => { returnView = 'landing'; showEditor(); });
+createBtn.addEventListener('click', () => { returnView = 'landing'; showEditor(); });
 logBtn.addEventListener('click', showLog);
 manageBtn.addEventListener('click', showScriptsList);
 clearBtn.addEventListener('click', clearLogs);
@@ -896,6 +910,7 @@ function editScriptFromList(host) {
     updateStatusLED(isEnabled, hasContent);
     updateToggleButton(isEnabled);
     updateTechnicalInfo(data.js, data.css);
+    returnView = 'scripts-list';
     showEditor();
   });
 }
@@ -1004,6 +1019,9 @@ function loadSiteData() {
     } catch (e) {
       currentHost = 'this site';
     }
+
+    originalHost = currentHost;
+    originalTabId = currentTabId;
 
     domainText.textContent = currentHost;
     emptyDomain.textContent = currentHost;
