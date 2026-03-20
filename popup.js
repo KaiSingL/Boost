@@ -397,6 +397,7 @@ function showLog() {
   editorView.classList.remove('active');
   logView.classList.remove('active');
   scriptsListView.classList.remove('active');
+  logView.classList.add('active');
   toolBar.style.display = 'flex';
   backBtn.style.display = 'flex';
   clearBtn.style.display = 'flex';
@@ -405,7 +406,6 @@ function showLog() {
   toolbarStatus.style.display = 'none';
 
   loadLogs();
-  logPre.scrollTop = logPre.scrollHeight;
   currentView = 'log';
 }
 
@@ -732,6 +732,7 @@ function loadLogs() {
   chrome.storage.local.get('boost_logs', ({ boost_logs: logs = [] }) => {
     const recent = logs.slice(-DISPLAY_LOGS).map(l => `[${new Date(l.timestamp).toLocaleString()}] ${l.source}: ${l.message}`).join('\n');
     logPre.textContent = recent || 'No logs yet. Perform actions to generate logs.';
+    logPre.scrollTop = logPre.scrollHeight;
   });
 }
 
