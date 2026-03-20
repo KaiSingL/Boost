@@ -328,7 +328,7 @@ function updateTechnicalInfo(jsCode, cssCode) {
   }
 }
 
-function showLanding() {
+async function showLanding() {
   landing.classList.add('active');
   editorView.classList.remove('active');
   logView.classList.remove('active');
@@ -341,7 +341,7 @@ function showLanding() {
   toolbarStatus.style.display = 'none';
   currentView = 'landing';
 
-  // Restore current domain details
+  // Restore current domain context
   if (originalHost) {
     currentHost = originalHost;
     currentTabId = originalTabId;
@@ -349,8 +349,27 @@ function showLanding() {
     emptyDomain.textContent = currentHost;
   }
 
-  // Update visibility based on hasContent
-  updateLandingVisibility();
+  // Reload current domain's data to refresh all state
+  if (currentHost) {
+    loadData(currentHost, (data) => {
+      isEnabled = data.enabled === true;
+      hasContent = (data.js || '').trim().length > 0 || (data.css || '').trim().length > 0;
+
+      updateStatusLED(isEnabled, hasContent);
+      updateToggleButton(isEnabled);
+      updateTechnicalInfo(data.js, data.css);
+      updateLandingVisibility();
+
+      // Also update editor values so save doesn't save wrong domain's code
+      waitForCodeMirror(() => {
+        initCodeMirror(currentTheme);
+        if (jsEditor) jsEditor.setValue(data.js || '');
+        if (cssEditor) cssEditor.setValue(data.css || '');
+      });
+    });
+  } else {
+    updateLandingVisibility();
+  }
 }
 
 function updateLandingVisibility() {
