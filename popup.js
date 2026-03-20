@@ -57,6 +57,7 @@ let currentTheme = 'system';
 const landing = document.getElementById('landing');
 const editorView = document.getElementById('editor-view');
 const logView = document.getElementById('log-view');
+const scriptsListView = document.getElementById('scripts-list-view');
 const toolBar = document.getElementById('toolbar');
 const backBtn = document.getElementById('back-btn');
 const saveBtn = document.getElementById('save-btn');
@@ -64,6 +65,20 @@ const reloadBtn = document.getElementById('reload-btn');
 const clearBtn = document.getElementById('clear-btn');
 const logPre = document.getElementById('log-pre');
 const logBtn = document.getElementById('log-btn');
+const manageBtn = document.getElementById('manage-btn');
+
+// Scripts list elements
+const scriptsList = document.getElementById('scripts-list');
+const scriptsCount = document.getElementById('scripts-count');
+const scriptsEmpty = document.getElementById('scripts-empty');
+
+// Delete dialog elements
+const deleteDialog = document.getElementById('delete-dialog');
+const deleteDialogMessage = document.getElementById('delete-dialog-message');
+const deleteCancelBtn = document.getElementById('delete-cancel-btn');
+const deleteConfirmBtn = document.getElementById('delete-confirm-btn');
+
+let deleteTargetHost = null;
 
 // Status elements
 const mainLed = document.getElementById('main-led');
@@ -314,6 +329,7 @@ function showLanding() {
   landing.classList.add('active');
   editorView.classList.remove('active');
   logView.classList.remove('active');
+  scriptsListView.classList.remove('active');
   toolBar.style.display = 'none';
   backBtn.style.display = 'none';
   saveBtn.style.display = 'none';
@@ -342,6 +358,7 @@ function showEditor() {
   landing.classList.remove('active');
   editorView.classList.add('active');
   logView.classList.remove('active');
+  scriptsListView.classList.remove('active');
   toolBar.style.display = 'flex';
   backBtn.style.display = 'flex';
   saveBtn.style.display = 'flex';
@@ -367,7 +384,8 @@ function showEditor() {
 function showLog() {
   landing.classList.remove('active');
   editorView.classList.remove('active');
-  logView.classList.add('active');
+  logView.classList.remove('active');
+  scriptsListView.classList.remove('active');
   toolBar.style.display = 'flex';
   backBtn.style.display = 'flex';
   clearBtn.style.display = 'flex';
@@ -378,6 +396,22 @@ function showLog() {
   loadLogs();
   logPre.scrollTop = logPre.scrollHeight;
   currentView = 'log';
+}
+
+function showScriptsList() {
+  landing.classList.remove('active');
+  editorView.classList.remove('active');
+  logView.classList.remove('active');
+  scriptsListView.classList.add('active');
+  toolBar.style.display = 'flex';
+  backBtn.style.display = 'flex';
+  clearBtn.style.display = 'none';
+  saveBtn.style.display = 'none';
+  reloadBtn.style.display = 'none';
+  toolbarStatus.style.display = 'none';
+
+  loadAllScripts();
+  currentView = 'scripts-list';
 }
 
 // Tab switching
@@ -400,11 +434,13 @@ document.querySelectorAll('.tab').forEach(tab => {
 backBtn.addEventListener('click', () => {
   if (currentView === 'editor') showLanding();
   if (currentView === 'log') showLanding();
+  if (currentView === 'scripts-list') showLanding();
 });
 
 editBtn.addEventListener('click', showEditor);
 createBtn.addEventListener('click', showEditor);
 logBtn.addEventListener('click', showLog);
+manageBtn.addEventListener('click', showScriptsList);
 clearBtn.addEventListener('click', clearLogs);
 
 toggleBtn.addEventListener('click', () => {
@@ -691,6 +727,261 @@ function clearLogs() {
     log('popup', 'Cleared all logs');
   });
 }
+
+// Scripts List View
+function discoverDomains() {
+  return new Promise((resolve) => {
+    storageApi.get(null, (allItems) => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to scan storage:', chrome.runtime.lastError.message);
+        resolve([]);
+        return;
+      }
+
+      const domains = new Set();
+      for (const key of Object.keys(allItems)) {
+        // Match ${host}_js_chunks or ${host}_css_chunks
+        const match = key.match(/^(.+?)_(js|css)_chunks$/);
+        if (match) {
+          domains.add(match[1]);
+        }
+      }
+
+      resolve(Array.from(domains).sort());
+    });
+  });
+}
+
+function deleteScript(host, cb) {
+  storageApi.get(null, (allItems) => {
+    if (chrome.runtime.lastError) {
+      cb(new Error(chrome.runtime.lastError.message));
+      return;
+    }
+
+    const keysToDelete = [];
+    for (const key of Object.keys(allItems)) {
+      if (key === `${host}_enabled` ||
+          key === `${host}_modified` ||
+          key.startsWith(`${host}_js_`) ||
+          key.startsWith(`${host}_css_`)) {
+        keysToDelete.push(key);
+      }
+    }
+
+    if (keysToDelete.length === 0) {
+      cb();
+      return;
+    }
+
+    storageApi.remove(keysToDelete, () => {
+      if (chrome.runtime.lastError) {
+        cb(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      log('popup', `Deleted all data for ${host} (${keysToDelete.length} keys)`);
+      cb();
+    });
+  });
+}
+
+function toggleScript(host, currentState, cb) {
+  const newState = !currentState;
+  storageApi.set({ [`${host}_enabled`]: newState }, () => {
+    if (chrome.runtime.lastError) {
+      cb(new Error(chrome.runtime.lastError.message));
+      return;
+    }
+    log('popup', `${host} ${newState ? 'enabled' : 'disabled'}`);
+    cb(null, newState);
+  });
+}
+
+function createScriptRow(host, enabled, modified, jsSize, cssSize) {
+  const row = document.createElement('div');
+  row.className = 'script-row';
+  row.dataset.host = host;
+
+  const totalSize = jsSize + cssSize;
+
+  const statusClass = enabled ? 'active' : '';
+  const statusText = enabled ? 'ACTIVE' : 'PAUSED';
+
+  row.innerHTML = `
+    <div class="script-row-info">
+      <span class="script-row-domain">${host}</span>
+      <div class="script-row-meta">
+        <span>${formatBytes(totalSize)}</span>
+        <span>JS: ${formatBytes(jsSize)}</span>
+        <span>CSS: ${formatBytes(cssSize)}</span>
+        <span>${formatDate(modified)}</span>
+      </div>
+    </div>
+    <div class="script-row-status">
+      <span class="led ${statusClass}"></span>
+      <span>${statusText}</span>
+    </div>
+    <div class="script-row-actions">
+      <button class="script-action-btn edit-script" title="Edit">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+        </svg>
+      </button>
+      <button class="script-action-btn toggle-script ${enabled ? 'toggle-active' : ''}" title="${enabled ? 'Disable' : 'Enable'}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>
+        </svg>
+      </button>
+      <button class="script-action-btn delete-script" title="Delete">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        </svg>
+      </button>
+    </div>
+  `;
+
+  // Edit handler
+  row.querySelector('.edit-script').addEventListener('click', (e) => {
+    e.stopPropagation();
+    editScriptFromList(host);
+  });
+
+  // Toggle handler
+  row.querySelector('.toggle-script').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    const led = row.querySelector('.script-row-status .led');
+    const statusLabel = row.querySelector('.script-row-status span:last-child');
+
+    toggleScript(host, enabled, (err, newState) => {
+      if (err) {
+        log('popup', `Toggle failed for ${host}: ${err.message}`);
+        return;
+      }
+      enabled = newState;
+      led.classList.toggle('active', newState);
+      statusLabel.textContent = newState ? 'ACTIVE' : 'PAUSED';
+      btn.classList.toggle('toggle-active', newState);
+      btn.title = newState ? 'Disable' : 'Enable';
+    });
+  });
+
+  // Delete handler
+  row.querySelector('.delete-script').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showDeleteDialog(host);
+  });
+
+  return row;
+}
+
+function editScriptFromList(host) {
+  currentHost = host;
+  currentTabId = null;
+
+  domainText.textContent = host;
+  emptyDomain.textContent = host;
+
+  loadData(host, (data) => {
+    waitForCodeMirror(() => {
+      initCodeMirror(currentTheme);
+
+      if (jsEditor) jsEditor.setValue(data.js || '');
+      if (cssEditor) cssEditor.setValue(data.css || '');
+    });
+
+    isEnabled = data.enabled === true;
+    hasContent = (data.js || '').trim().length > 0 || (data.css || '').trim().length > 0;
+
+    updateStatusLED(isEnabled, hasContent);
+    updateToggleButton(isEnabled);
+    updateTechnicalInfo(data.js, data.css);
+    showEditor();
+  });
+}
+
+async function loadAllScripts() {
+  const domains = await discoverDomains();
+
+  scriptsList.innerHTML = '';
+  scriptsCount.textContent = `${domains.length} domain${domains.length !== 1 ? 's' : ''}`;
+
+  if (domains.length === 0) {
+    scriptsList.innerHTML = '';
+    scriptsList.appendChild(scriptsEmpty);
+    scriptsEmpty.style.display = 'flex';
+    return;
+  }
+
+  scriptsEmpty.style.display = 'none';
+
+  for (const host of domains) {
+    const enabledKey = `${host}_enabled`;
+    const modifiedKey = `${host}_modified`;
+
+    storageApi.get([enabledKey, modifiedKey], (items) => {
+      const enabled = items[enabledKey] === true;
+      const modified = items[modifiedKey] || null;
+
+      loadField(`${host}_js`, (encodedJs) => {
+        const js = decodeScript(encodedJs);
+        const jsSize = js.length;
+
+        loadField(`${host}_css`, (encodedCss) => {
+          const css = decodeScript(encodedCss);
+          const cssSize = css.length;
+
+          const row = createScriptRow(host, enabled, modified, jsSize, cssSize);
+          scriptsList.appendChild(row);
+        });
+      });
+    });
+  }
+}
+
+// Delete dialog
+function showDeleteDialog(host) {
+  deleteTargetHost = host;
+  deleteDialogMessage.innerHTML = `Delete script for <strong>${host}</strong>?`;
+  deleteDialog.style.display = 'flex';
+}
+
+function hideDeleteDialog() {
+  deleteTargetHost = null;
+  deleteDialog.style.display = 'none';
+}
+
+deleteCancelBtn.addEventListener('click', hideDeleteDialog);
+
+deleteConfirmBtn.addEventListener('click', () => {
+  if (!deleteTargetHost) return;
+
+  const host = deleteTargetHost;
+  hideDeleteDialog();
+
+  deleteScript(host, (err) => {
+    if (err) {
+      log('popup', `Delete failed for ${host}: ${err.message}`);
+      return;
+    }
+
+    const row = scriptsList.querySelector(`.script-row[data-host="${host}"]`);
+    if (row) {
+      row.style.opacity = '0';
+      row.style.transform = 'translateX(20px)';
+      row.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+      setTimeout(() => {
+        row.remove();
+        const remaining = scriptsList.querySelectorAll('.script-row').length;
+        scriptsCount.textContent = `${remaining} domain${remaining !== 1 ? 's' : ''}`;
+        if (remaining === 0) {
+          scriptsEmpty.style.display = 'flex';
+          scriptsList.appendChild(scriptsEmpty);
+        }
+      }, 200);
+    }
+  });
+});
 
 // Load data for current domain
 function loadSiteData() {

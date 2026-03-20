@@ -178,12 +178,21 @@
         <div class="theme-knob"></div>
       </div>
       
-      <button id="log-btn" class="log-btn">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>
-        </svg>
-        <span>LOGS</span>
-      </button>
+      <div class="version-footer-right">
+        <button id="log-btn" class="log-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>
+          </svg>
+          <span>LOGS</span>
+        </button>
+
+        <button id="manage-btn" class="log-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+          <span>ALL SCRIPTS</span>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -204,6 +213,36 @@
   <div id="log-view" class="view">
     <div class="log-wrapper">
       <pre id="log-pre">No logs yet. Perform actions to generate logs.</pre>
+    </div>
+  </div>
+
+  <!-- Scripts List View -->
+  <div id="scripts-list-view" class="view">
+    <div class="scripts-list-wrapper">
+      <div class="scripts-list-header">
+        <span class="scripts-list-title">SAVED SCRIPTS</span>
+        <span class="scripts-list-count" id="scripts-count">0 domains</span>
+      </div>
+      <div class="scripts-list" id="scripts-list">
+        <div class="scripts-empty" id="scripts-empty">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <p>No saved scripts yet</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Dialog -->
+  <div id="delete-dialog" class="dialog-overlay" style="display:none;">
+    <div class="dialog-box">
+      <p class="dialog-message" id="delete-dialog-message">Delete script for <strong></strong>?</p>
+      <div class="dialog-actions">
+        <button id="delete-cancel-btn" class="dialog-btn cancel">CANCEL</button>
+        <button id="delete-confirm-btn" class="dialog-btn confirm">DELETE</button>
+      </div>
     </div>
   </div>
 
