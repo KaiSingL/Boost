@@ -55,6 +55,8 @@ let currentView = 'landing';
 let returnView = 'landing';
 let lastModified = null;
 let currentTheme = 'system';
+let pendingJs = '';
+let pendingCss = '';
 
 // DOM elements
 const landing = document.getElementById('landing');
@@ -351,22 +353,7 @@ async function showLanding() {
 
   // Reload current domain's data to refresh all state
   if (currentHost) {
-    loadData(currentHost, (data) => {
-      isEnabled = data.enabled === true;
-      hasContent = (data.js || '').trim().length > 0 || (data.css || '').trim().length > 0;
-
-      updateStatusLED(isEnabled, hasContent);
-      updateToggleButton(isEnabled);
-      updateTechnicalInfo(data.js, data.css);
-      updateLandingVisibility();
-
-      // Also update editor values so save doesn't save wrong domain's code
-      waitForCodeMirror(() => {
-        initCodeMirror(currentTheme);
-        if (jsEditor) jsEditor.setValue(data.js || '');
-        if (cssEditor) cssEditor.setValue(data.css || '');
-      });
-    });
+    loadData(currentHost, () => {});
   } else {
     updateLandingVisibility();
   }
@@ -400,12 +387,12 @@ function showEditor() {
   if (!editorsInitialized) {
     waitForCodeMirror(() => {
       initCodeMirror(currentTheme);
-      if (jsEditor) jsEditor.refresh();
-      if (cssEditor) cssEditor.refresh();
+      if (jsEditor) { jsEditor.setValue(pendingJs); jsEditor.refresh(); }
+      if (cssEditor) { cssEditor.setValue(pendingCss); cssEditor.refresh(); }
     });
   } else {
-    if (jsEditor) jsEditor.refresh();
-    if (cssEditor) cssEditor.refresh();
+    if (jsEditor) { jsEditor.setValue(pendingJs); jsEditor.refresh(); }
+    if (cssEditor) { cssEditor.setValue(pendingCss); cssEditor.refresh(); }
   }
 
   currentView = 'editor';
@@ -677,60 +664,88 @@ function loadField(baseKey, cb) {
 }
 
 function loadData(host, callback) {
-  log('popup', `LOAD: Starting load for ${host}`);
-
-  storageApi.get(host, items => {
+  // Batch 1: Get all metadata + chunk counts in one call (was 4 sequential calls)
+  storageApi.get([
+    host,
+    `${host}_enabled`,
+    `${host}_modified`,
+    `${host}_js_chunks`,
+    `${host}_css_chunks`
+  ], items => {
     if (chrome.runtime.lastError) {
-      const errorMsg = chrome.runtime.lastError.message;
-      log('popup', `LOAD ERROR checking old format for ${host}: ${errorMsg}`);
-      console.error('Boost load error:', errorMsg);
+      console.error('Boost load error:', chrome.runtime.lastError.message);
       callback({ js: '', css: '', enabled: false });
       return;
     }
 
+    // Handle legacy format migration
     if (items[host]) {
       const oldData = items[host];
-      log('popup', `LOAD: Old format found, migrating for ${host}`);
       saveData(host, oldData, (err) => {
-        if (err) {
-          log('popup', `LOAD: Migration failed for ${host}: ${err.message}`);
-          callback(oldData);
-          return;
+        if (err) callback(oldData);
+        else {
+          storageApi.remove(host, () => { callback(oldData); });
         }
-        storageApi.remove(host, () => {
-          if (chrome.runtime.lastError) {
-            log('popup', `LOAD WARNING: Failed to remove old format for ${host}: ${chrome.runtime.lastError.message}`);
-          }
-          log('popup', `LOAD: Migration complete for ${host}`);
-          callback(oldData);
-        });
       });
       return;
     }
 
-    log('popup', `LOAD: Loading chunked format for ${host}`);
-    storageApi.get([`${host}_enabled`, `${host}_modified`], items => {
+    const enabled = items[`${host}_enabled`] === true;
+    lastModified = items[`${host}_modified`] || null;
+    const jsChunkCount = items[`${host}_js_chunks`] || 0;
+    const cssChunkCount = items[`${host}_css_chunks`] || 0;
+
+    // Build all chunk key arrays upfront
+    const chunkKeys = [];
+    for (let i = 0; i < jsChunkCount; i++) chunkKeys.push(`${host}_js_${i}`);
+    for (let i = 0; i < cssChunkCount; i++) chunkKeys.push(`${host}_css_${i}`);
+
+    if (chunkKeys.length === 0) {
+      pendingJs = '';
+      pendingCss = '';
+      hasContent = false;
+      updateStatusLED(isEnabled = enabled, false);
+      updateToggleButton(enabled);
+      updateTechnicalInfo('', '');
+      updateLandingVisibility();
+      callback({ js: '', css: '', enabled });
+      return;
+    }
+
+    // Batch 2: Get ALL JS+CSS chunks in one call (was 4 sequential calls)
+    storageApi.get(chunkKeys, chunks => {
       if (chrome.runtime.lastError) {
-        const errorMsg = chrome.runtime.lastError.message;
-        log('popup', `LOAD ERROR for ${host} metadata: ${errorMsg}`);
-        console.error('Boost load error:', errorMsg);
+        console.error('Boost load error:', chrome.runtime.lastError.message);
         callback({ js: '', css: '', enabled: false });
         return;
       }
 
-      const enabled = items[`${host}_enabled`] === true;
-      lastModified = items[`${host}_modified`] || null;
-      log('popup', `LOAD: ${host} enabled=${enabled}, modified=${lastModified || 'never'}`);
-      
-      loadField(`${host}_js`, encodedJs => {
-        const js = decodeScript(encodedJs);
-        loadField(`${host}_css`, encodedCss => {
-          const css = decodeScript(encodedCss);
-          const data = { js, css, enabled };
-          log('popup', `LOAD: Data loaded for ${host} (js:${js.length}, css:${css.length}, enabled:${enabled})`);
-          callback(data);
-        });
-      });
+      // Reconstruct JS
+      let jsEncoded = '';
+      for (let i = 0; i < jsChunkCount; i++) {
+        const chunk = chunks[`${host}_js_${i}`];
+        if (chunk) jsEncoded += chunk;
+      }
+
+      // Reconstruct CSS
+      let cssEncoded = '';
+      for (let i = 0; i < cssChunkCount; i++) {
+        const chunk = chunks[`${host}_css_${i}`];
+        if (chunk) cssEncoded += chunk;
+      }
+
+      const js = decodeScript(jsEncoded);
+      const css = decodeScript(cssEncoded);
+      pendingJs = js;
+      pendingCss = css;
+      hasContent = js.trim().length > 0 || css.trim().length > 0;
+
+      updateStatusLED(isEnabled = enabled, hasContent);
+      updateToggleButton(enabled);
+      updateTechnicalInfo(js, css);
+      updateLandingVisibility();
+
+      callback({ js, css, enabled });
     });
   });
 }
@@ -912,25 +927,11 @@ function createScriptRow(host, enabled, modified, jsSize, cssSize) {
 function editScriptFromList(host) {
   currentHost = host;
   currentTabId = null;
-
   domainText.textContent = host;
   emptyDomain.textContent = host;
+  returnView = 'scripts-list';
 
-  loadData(host, (data) => {
-    waitForCodeMirror(() => {
-      initCodeMirror(currentTheme);
-
-      if (jsEditor) jsEditor.setValue(data.js || '');
-      if (cssEditor) cssEditor.setValue(data.css || '');
-    });
-
-    isEnabled = data.enabled === true;
-    hasContent = (data.js || '').trim().length > 0 || (data.css || '').trim().length > 0;
-
-    updateStatusLED(isEnabled, hasContent);
-    updateToggleButton(isEnabled);
-    updateTechnicalInfo(data.js, data.css);
-    returnView = 'scripts-list';
+  loadData(host, () => {
     showEditor();
   });
 }
@@ -1046,29 +1047,19 @@ function loadSiteData() {
     domainText.textContent = currentHost;
     emptyDomain.textContent = currentHost;
 
-    loadData(currentHost, (data) => {
-      // Initialize editors and set content
-      waitForCodeMirror(() => {
-        initCodeMirror(currentTheme);
-
-        if (jsEditor) {
-          jsEditor.setValue(data.js || '');
-        }
-
-        if (cssEditor) {
-          cssEditor.setValue(data.css || '');
-        }
-      });
-
-      isEnabled = data.enabled === true;
-      hasContent = (data.js || '').trim().length > 0 || (data.css || '').trim().length > 0;
-
-      // Update UI
-      updateStatusLED(isEnabled, hasContent);
-      updateToggleButton(isEnabled);
-      updateTechnicalInfo(data.js, data.css);
-      updateLandingVisibility();
-      showLanding();
+    loadData(currentHost, () => {
+      // Data already loaded by loadData — just show the view
+      landing.classList.add('active');
+      editorView.classList.remove('active');
+      logView.classList.remove('active');
+      scriptsListView.classList.remove('active');
+      toolBar.style.display = 'none';
+      backBtn.style.display = 'none';
+      saveBtn.style.display = 'none';
+      reloadBtn.style.display = 'none';
+      clearBtn.style.display = 'none';
+      toolbarStatus.style.display = 'none';
+      currentView = 'landing';
     });
   });
 }
