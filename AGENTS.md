@@ -210,11 +210,15 @@ Log sources: `'popup'`, `'background'`, `'content'`
 ├── background.js          # Service worker - desktop injection
 ├── content.js            # Content script - mobile injection
 ├── popup.html            # Popup UI
+├── popup.css             # Popup styles
 ├── popup.js              # Popup logic
 ├── lib/codemirror/       # Code editor library
 ├── icons/                # Extension icons (16, 48, 128px)
 ├── examples/             # Example scripts (not in zip)
-└── zipper.ps1           # Build script
+├── zipper.ps1            # Windows build script
+├── zipper.zsh            # macOS/Linux build script
+├── AGENTS.md             # Agent guidelines
+└── README.md             # Project documentation
 ```
 
 ### Code Comments

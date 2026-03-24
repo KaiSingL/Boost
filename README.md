@@ -8,7 +8,7 @@ A powerful, mobile-friendly browser extension that allows you to edit and inject
 - **Cross-Platform Compatibility**: Works seamlessly on both desktop browsers and mobile browsers including Orion on iOS (with special storage handling)
 - **Per-Domain Customization**: Apply different JavaScript and CSS scripts to different websites
 - **Real-time Injection**: Scripts are injected immediately when enabled
-- **Syntax Highlighting**: Code editors with JavaScript and CSS syntax highlighting using Prism.js
+- **Syntax Highlighting**: Code editors with JavaScript and CSS syntax highlighting using CodeMirror
 - **Mobile-Optimized UI**: Responsive interface that adapts to mobile screens with touch-friendly controls
 - **Toggle Control**: Easily enable/disable scripts for any domain
 - **Persistent Storage**: Your scripts are saved across browser sessions
@@ -28,7 +28,7 @@ A powerful, mobile-friendly browser extension that allows you to edit and inject
 
 1. **Download the extension files**
    ```bash
-   git clone https://github.com/yourusername/boost.git
+   git clone https://github.com/KaiSingL/Boost.git
    cd boost
    ```
 
@@ -212,7 +212,7 @@ Orion browser on iOS has a known bug where `chrome.storage.sync` and `chrome.sto
 - **Root Cause**: Orion has a bug where `chrome.storage.sync` and `chrome.storage.local` share the same storage space, causing data corruption and loss
 - **Solution**: The extension automatically detects Orion and uses `chrome.storage.local` exclusively to avoid this bug. This is handled transparently - no user action required.
 - **If issues persist**:
-  - Update to the latest version of the extension (v2.4.0+)
+   - Update to the latest version of the extension (v2.5.3+)
   - Clear existing extension data in Orion settings
   - Reinstall the extension if necessary
   - Check the log view for "Using local storage (Orion detected)" message
@@ -332,6 +332,6 @@ This project is open source and available under the MIT License.
 
 ## 🙏 Acknowledgments
 
-- [Prism.js](https://prismjs.com/) for syntax highlighting
+- [CodeMirror](https://codemirror.net/) for syntax highlighting
 - Chrome Extension API for powerful browser integration
 - Orion browser team for mobile extension support
