@@ -681,6 +681,8 @@ function loadData(host, callback) {
     // Handle legacy format migration
     if (items[host]) {
       const oldData = items[host];
+      pendingJs = oldData.js || '';
+      pendingCss = oldData.css || '';
       saveData(host, oldData, (err) => {
         if (err) callback(oldData);
         else {
