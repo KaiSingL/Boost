@@ -464,21 +464,16 @@ manageBtn.addEventListener('click', showScriptsList);
 clearBtn.addEventListener('click', clearLogs);
 
 toggleBtn.addEventListener('click', () => {
-  isEnabled = !isEnabled;
-  
-  updateStatusLED(isEnabled, hasContent);
-  updateToggleButton(isEnabled);
-  
-  const jsCode = jsEditor ? jsEditor.getValue() : '';
-  const cssCode = cssEditor ? cssEditor.getValue() : '';
-  
-  saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, (err) => {
+  toggleScript(currentHost, isEnabled, (err, newState) => {
     if (err) {
-      log('popup', `Toggle save failed for ${currentHost}: ${err.message}`);
+      log('popup', `Toggle failed for ${currentHost}: ${err.message}`);
+      return;
     }
+    isEnabled = newState;
+    updateStatusLED(isEnabled, hasContent);
+    updateToggleButton(isEnabled);
+    chrome.tabs.reload(currentTabId);
   });
-  
-  chrome.tabs.reload(currentTabId);
 });
 
 saveBtn.addEventListener('click', () => {
