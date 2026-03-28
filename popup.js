@@ -67,6 +67,7 @@ const toolBar = document.getElementById('toolbar');
 const backBtn = document.getElementById('back-btn');
 const saveBtn = document.getElementById('save-btn');
 const reloadBtn = document.getElementById('reload-btn');
+const enableReloadBtn = document.getElementById('enable-reload-btn');
 const clearBtn = document.getElementById('clear-btn');
 const logPre = document.getElementById('log-pre');
 const logBtn = document.getElementById('log-btn');
@@ -339,6 +340,7 @@ async function showLanding() {
   backBtn.style.display = 'none';
   saveBtn.style.display = 'none';
   reloadBtn.style.display = 'none';
+  enableReloadBtn.style.display = 'none';
   clearBtn.style.display = 'none';
   toolbarStatus.style.display = 'none';
   currentView = 'landing';
@@ -379,9 +381,16 @@ function showEditor() {
   toolBar.style.display = 'flex';
   backBtn.style.display = 'flex';
   saveBtn.style.display = 'flex';
-  reloadBtn.style.display = 'flex';
   clearBtn.style.display = 'none';
   toolbarStatus.style.display = 'flex';
+
+  if (isEnabled) {
+    reloadBtn.style.display = 'flex';
+    enableReloadBtn.style.display = 'none';
+  } else {
+    reloadBtn.style.display = 'none';
+    enableReloadBtn.style.display = 'flex';
+  }
 
   // Initialize editors if not already done
   if (!editorsInitialized) {
@@ -409,6 +418,7 @@ function showLog() {
   clearBtn.style.display = 'flex';
   saveBtn.style.display = 'none';
   reloadBtn.style.display = 'none';
+  enableReloadBtn.style.display = 'none';
   toolbarStatus.style.display = 'none';
 
   loadLogs();
@@ -425,6 +435,7 @@ function showScriptsList() {
   clearBtn.style.display = 'none';
   saveBtn.style.display = 'none';
   reloadBtn.style.display = 'none';
+  enableReloadBtn.style.display = 'none';
   toolbarStatus.style.display = 'none';
 
   loadAllScripts();
@@ -508,6 +519,25 @@ reloadBtn.addEventListener('click', () => {
     chrome.tabs.reload(currentTabId);
     log('popup', `Reloaded tab ${currentTabId}`);
   }
+});
+
+enableReloadBtn.addEventListener('click', () => {
+  enableReloadBtn.style.display = 'none';
+  reloadBtn.style.display = 'flex';
+  log('popup', `Enabling script for ${currentHost}...`);
+  toggleScript(currentHost, isEnabled, (err, newState) => {
+    if (err) {
+      log('popup', `Enable failed for ${currentHost}: ${err.message}`);
+      return;
+    }
+    isEnabled = newState;
+    updateStatusLED(isEnabled, hasContent);
+    updateToggleButton(isEnabled);
+    log('popup', `Script enabled for ${currentHost}, reloading page...`);
+    if (currentTabId) {
+      chrome.tabs.reload(currentTabId);
+    }
+  });
 });
 
 // Chunk functions
@@ -1054,6 +1084,7 @@ function loadSiteData() {
       backBtn.style.display = 'none';
       saveBtn.style.display = 'none';
       reloadBtn.style.display = 'none';
+      enableReloadBtn.style.display = 'none';
       clearBtn.style.display = 'none';
       toolbarStatus.style.display = 'none';
       currentView = 'landing';
