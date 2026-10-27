@@ -5,7 +5,7 @@ A powerful, mobile-friendly browser extension that allows you to edit and inject
 ## ✨ Features
 
 ### Core Features
-- **Cross-Platform Compatibility**: Works seamlessly on both desktop browsers and mobile browsers including Orion on iOS (with special storage handling)
+- **Cross-Platform Compatibility**: Works seamlessly on both desktop browsers and mobile browsers including Orion on iOS (scripts stored locally on every browser)
 - **Per-Domain Customization**: Apply different JavaScript and CSS scripts to different websites
 - **Real-time Injection**: Scripts are injected immediately when enabled
 - **Syntax Highlighting**: Code editors with JavaScript and CSS syntax highlighting using CodeMirror
@@ -15,10 +15,10 @@ A powerful, mobile-friendly browser extension that allows you to edit and inject
 
 ### Advanced Features
 - **CSP Bypass**: Inject scripts on sites with strict Content Security Policy using Chrome's scripting API
-- **Large Script Support**: Chunked storage system supports scripts larger than 100KB
+- **Large Script Support**: Chunked storage in `chrome.storage.local` (10MB) comfortably handles scripts larger than 100KB
 - **Dual Injection Architecture**: Separate injection methods for desktop (background script) and mobile (content script)
 - **Comprehensive Logging**: Real-time log viewing with persistent storage across all components
-- **Auto Migration**: Seamless migration from old storage format to new chunked system
+- **Auto Migration**: Seamless migration from the legacy single-key format, plus a one-time copy of old sync storage into local
 - **Base64 Encoding**: Proper handling of Unicode and special characters in scripts
 
 ## 🚀 Quick Start
@@ -129,32 +129,22 @@ chrome.scripting.insertCSS({
 ### Chunked Storage System
 Large scripts are automatically split into 7000-character chunks:
 - Base64 encoding for Unicode support
-- Automatic migration from old format
-- Storage efficiency for scripts >100KB
-- Error handling and recovery
+- Automatic migration from the old single-key format
+- Local storage quota (10MB in Chrome 114+) with a pre-flight check for oversized saves
+- Write-before-cleanup saves, so a failed write never deletes existing scripts
+
+### Storage Model (local-only)
+All extension data (scripts, enabled flags, theme) lives in `chrome.storage.local` via the shared `storage.js` layer:
+- **No 100KB cloud limit**: desktop builds previously used `chrome.storage.sync`, which fails large saves with `Resource::kQuotaBytes quota exceeded`
+- **One-time migration**: on update, any existing `chrome.storage.sync` data is copied into local and marked as migrated; the old sync copy is kept as a backup
+- **No cross-device sync**: scripts stay on the device where they were created
+- **Orion-safe**: Orion on iOS has a bug where `storage.sync` and `storage.local` share one space; using local only avoids it entirely
 
 ### Mobile Optimization
 - Dual detection system for comprehensive mobile device identification
 - Touch-friendly interface with larger controls
 - Responsive layout with safe area padding
 - Optimized injection pipeline for mobile browsers
-
-### Orion Browser Compatibility (iOS)
-Orion browser on iOS has a known bug where `chrome.storage.sync` and `chrome.storage.local` share the same storage space, which causes:
-- Data corruption when both storage types are used
-- Loss of saved scripts and settings
-- Inconsistent toggle states
-
-**Our Solution:**
-- Automatic Orion detection via User-Agent analysis
-- Transparent switching to `chrome.storage.local` exclusively
-- Proper cleanup of old chunk keys when saving empty content
-- Consistent storage behavior across popup.js, background.js, and content.js
-
-**Benefits:**
-- Higher storage quota (5MB vs ~100KB for sync)
-- Faster operations without cloud sync overhead
-- Reliable data persistence across Orion sessions
 
 ## 📖 Usage Guide
 
@@ -209,21 +199,21 @@ Orion browser on iOS has a known bug where `chrome.storage.sync` and `chrome.sto
 
 #### Orion Browser Storage Issues (iOS)
 - **Issue**: Scripts or toggle states not persisting on Orion browser
-- **Root Cause**: Orion has a bug where `chrome.storage.sync` and `chrome.storage.local` share the same storage space, causing data corruption and loss
-- **Solution**: The extension automatically detects Orion and uses `chrome.storage.local` exclusively to avoid this bug. This is handled transparently - no user action required.
+- **Background**: Orion has a bug where `chrome.storage.sync` and `chrome.storage.local` share the same storage space, which can corrupt data when both are used
+- **Solution**: The extension now uses `chrome.storage.local` exclusively on every browser, so the collision cannot happen. No user action required.
 - **If issues persist**:
-   - Update to the latest version of the extension (v2.5.3+)
+  - Update to the latest version of the extension (v2.5.6+)
   - Clear existing extension data in Orion settings
   - Reinstall the extension if necessary
-  - Check the log view for "Using local storage (Orion detected)" message
+  - Check the log view for "Using local storage" messages
 
 #### Storage Errors
 - **Issue**: Scripts not saving or loading properly
 - **Solutions**:
   - Check browser storage permissions
-  - Clear extension storage and recreate scripts
+  - Open the log view and look for a "storage is full" message — delete unused scripts to free space
   - Verify chunked storage is working (check logs)
-  - Try migrating from old format if applicable
+  - If an old version failed to migrate scripts, update and reopen the popup once (migration runs automatically)
 
 #### CSP Violations
 - **Issue**: Scripts blocked by Content Security Policy
@@ -248,6 +238,11 @@ Enable enhanced logging:
 ## 👨‍💻 Developer Documentation
 
 ### Key Components
+
+#### storage.js
+- Shared storage layer used by popup, background and content scripts
+- Forces `chrome.storage.local` for all script data
+- One-time migration of legacy `chrome.storage.sync` data
 
 #### popup.js
 - User interface and interaction handling
@@ -307,9 +302,9 @@ log('source', 'message')
 - **No telemetry**: No usage data sent to external services
 
 ### Storage Security
-- **Local storage**: Scripts stored in `chrome.storage.local`
-- **Sync storage**: Available across devices via `chrome.storage.sync` (desktop browsers only)
-- **Orion browser**: Uses `chrome.storage.local` exclusively to avoid a browser bug where sync and local storage collide
+- **Local storage**: Scripts, enabled flags and theme are stored in `chrome.storage.local` on every browser
+- **No sync**: Data is not uploaded to Chrome Sync or any other service; scripts do not travel between devices
+- **Migration**: Legacy `chrome.storage.sync` data is copied into local once; the sync copy is left untouched as a backup and is not written to again
 - **Encryption**: Data stored as-is (browser handles encryption)
 - **Access control**: Only accessible by the extension
 

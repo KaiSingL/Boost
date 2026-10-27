@@ -10,13 +10,8 @@
                          (/Macintosh/i.test(navigator.userAgent) && 'ontouchend' in document);
   if (!isMobileDevice) return;
 
-  // Orion Browser Detection and Storage Strategy
-  // Orion has a bug where storage.sync and storage.local share the same space
-  const isOrionBrowser = /Orion/i.test(navigator.userAgent) || 
-    (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome') && 
-     /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent));
-  const storageApi = isOrionBrowser ? chrome.storage.local : chrome.storage.sync;
-  const STORAGE_TYPE = isOrionBrowser ? 'local' : 'sync';
+  // Shared storage layer (loaded via content_scripts): chrome.storage.local.
+  const { storageApi, STORAGE_TYPE, isOrionBrowser, ensureStorageMigrated } = window.BoostStorage;
 
   // Send log via message to background
   function sendLog(source, message) {
@@ -189,36 +184,38 @@
   }
 
   // Load and inject (exact old approach)
-  loadData(hostname, (data) => {
-    sendLog('content', `Data loaded for ${hostname}`);
-    if (!data.enabled) return;
-    const jsCode = data.js || '';
-    const cssCode = data.css || '';
-    if (!jsCode.trim() && !cssCode.trim()) return;
+  ensureStorageMigrated().then(() => {
+    loadData(hostname, (data) => {
+      sendLog('content', `Data loaded for ${hostname}`);
+      if (!data.enabled) return;
+      const jsCode = data.js || '';
+      const cssCode = data.css || '';
+      if (!jsCode.trim() && !cssCode.trim()) return;
 
-    const head = document.head || document.documentElement;
-    let injected = false;
+      const head = document.head || document.documentElement;
+      let injected = false;
 
-    if (cssCode.trim()) {
-      const style = document.createElement('style');
-      style.dataset.boost = 'css';
-      style.textContent = cssCode;
-      head.appendChild(style);
-      sendLog('content', `CSS injected on ${hostname}`);
-      injected = true;
-    }
+      if (cssCode.trim()) {
+        const style = document.createElement('style');
+        style.dataset.boost = 'css';
+        style.textContent = cssCode;
+        head.appendChild(style);
+        sendLog('content', `CSS injected on ${hostname}`);
+        injected = true;
+      }
 
-    if (jsCode.trim()) {
-      const script = document.createElement('script');
-      script.dataset.boost = 'js';
-      script.textContent = jsCode;
-      head.appendChild(script);
-      sendLog('content', `JS injected on ${hostname}`);
-      injected = true;
-    }
+      if (jsCode.trim()) {
+        const script = document.createElement('script');
+        script.dataset.boost = 'js';
+        script.textContent = jsCode;
+        head.appendChild(script);
+        sendLog('content', `JS injected on ${hostname}`);
+        injected = true;
+      }
 
-    if (injected) {
-      sendLog('content', `JS and CSS injected successfully on ${hostname}`);
-    }
+      if (injected) {
+        sendLog('content', `JS and CSS injected successfully on ${hostname}`);
+      }
+    });
   });
 })();

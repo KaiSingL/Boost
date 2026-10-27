@@ -189,9 +189,16 @@ body.mobile .log-wrapper {
   border-color: var(--accent-cyan-light);
 }
 
+.tool-btn.primary.saved,
 .tool-btn.primary.saved:hover {
   background: var(--accent-green);
   border-color: var(--accent-green);
+}
+
+.tool-btn.primary.save-failed,
+.tool-btn.primary.save-failed:hover {
+  background: var(--accent-red);
+  border-color: var(--accent-red);
 }
 
 /* LED Status Indicator */

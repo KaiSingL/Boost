@@ -26,16 +26,10 @@
   window.isOrionBrowser = isOrionBrowser;
 })();
 
-// Orion Browser Detection and Storage Strategy
-// Orion has a bug where storage.sync and storage.local share the same space
-// causing data corruption. We use storage.local for Orion to avoid this.
-const isOrionBrowser = /Orion/i.test(navigator.userAgent) || 
-  (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome') && 
-   /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent));
-
-// Use local storage for Orion to avoid sync/local collision bug
-const storageApi = isOrionBrowser ? chrome.storage.local : chrome.storage.sync;
-const STORAGE_TYPE = isOrionBrowser ? 'local' : 'sync';
+// Shared storage layer (loaded via popup.html): chrome.storage.local.
+// Desktop previously used chrome.storage.sync, which is capped at ~100KB total
+// and produced "quota exceeded" failures for large scripts.
+const { isOrionBrowser, storageApi, STORAGE_TYPE, ensureStorageMigrated } = window.BoostStorage;
 
 console.log(`Boost: Using ${STORAGE_TYPE} storage${isOrionBrowser ? ' (Orion detected)' : ''}`);
 
@@ -141,6 +135,40 @@ function decodeScript(encoded) {
       return encoded;
     }
   }
+}
+
+// Returns the numeric chunk keys (`<host>_js_<n>`, `<host>_css_<n>`) that exist
+// in storage for a host. Used to clean up leftovers from a previous save.
+function collectChunkKeys(allItems, host) {
+  const jsPrefix = `${host}_js_`;
+  const cssPrefix = `${host}_css_`;
+
+  return Object.keys(allItems).filter((key) => {
+    let suffix;
+    if (key.startsWith(jsPrefix)) suffix = key.slice(jsPrefix.length);
+    else if (key.startsWith(cssPrefix)) suffix = key.slice(cssPrefix.length);
+    else return false;
+    return /^\d+$/.test(suffix);
+  });
+}
+
+// Approximate how Chrome accounts for an item: UTF-8 bytes of key + value.
+function estimateStoredBytes(items) {
+  let total = 0;
+  for (const [key, value] of Object.entries(items)) {
+    total += new Blob([key, String(value)]).size;
+  }
+  return total;
+}
+
+function getStorageBytesInUse() {
+  return new Promise((resolve) => {
+    if (typeof chrome.storage.local.getBytesInUse !== 'function') {
+      resolve(0);
+      return;
+    }
+    chrome.storage.local.getBytesInUse(null, (bytes) => resolve(bytes || 0));
+  });
 }
 
 function formatBytes(bytes) {
@@ -487,6 +515,23 @@ toggleBtn.addEventListener('click', () => {
   });
 });
 
+let saveFlashTimer = null;
+
+function flashSaveButton(text, className, duration) {
+  const label = saveBtn.querySelector('span');
+  if (!label) return;
+  if (!saveBtn.dataset.baseLabel) saveBtn.dataset.baseLabel = label.textContent;
+
+  clearTimeout(saveFlashTimer);
+  saveBtn.classList.add(className);
+  label.textContent = text;
+
+  saveFlashTimer = setTimeout(() => {
+    saveBtn.classList.remove('saved', 'save-failed');
+    label.textContent = saveBtn.dataset.baseLabel;
+  }, duration);
+}
+
 saveBtn.addEventListener('click', () => {
   const jsCode = jsEditor ? jsEditor.getValue() : '';
   const cssCode = cssEditor ? cssEditor.getValue() : '';
@@ -494,22 +539,16 @@ saveBtn.addEventListener('click', () => {
   saveData(currentHost, { js: jsCode, css: cssCode, enabled: isEnabled }, (err) => {
     if (err) {
       log('popup', `Save failed for ${currentHost}: ${err.message}`);
+      flashSaveButton('SAVE FAILED', 'save-failed', 2500);
     } else {
       log('popup', `Saved script for ${currentHost}`);
       hasContent = jsCode.trim().length > 0 || cssCode.trim().length > 0;
       updateLandingVisibility();
       updateStatusLED(isEnabled, hasContent);
       updateTechnicalInfo(jsCode, cssCode);
-      
+
       // Visual feedback - show "SAVED ✓" for 1.5 seconds
-      const originalText = saveBtn.querySelector('span').textContent;
-      saveBtn.classList.add('saved');
-      saveBtn.querySelector('span').textContent = 'SAVED \u2713';
-      
-      setTimeout(() => {
-        saveBtn.classList.remove('saved');
-        saveBtn.querySelector('span').textContent = originalText;
-      }, 1500);
+      flashSaveButton('SAVED \u2713', 'saved', 1500);
     }
   });
 });
@@ -543,15 +582,8 @@ enableReloadBtn.addEventListener('click', () => {
 // Chunk functions
 function chunkAndSet(baseKey, value, sets) {
   const chunkCountKey = `${baseKey}_chunks`;
-  
-  if (value.length === 0) {
-    // Mark for deletion - don't just set count to 0
-    sets[chunkCountKey] = 0;
-    sets[`${baseKey}_delete_marker`] = true; // Signal to delete old chunks
-    return;
-  }
-
   const chunks = [];
+
   for (let i = 0; i < value.length; i += CHUNK_SIZE) {
     chunks.push(value.substring(i, i + CHUNK_SIZE));
   }
@@ -562,75 +594,60 @@ function chunkAndSet(baseKey, value, sets) {
   });
 }
 
-function saveData(host, data, cb) {
-  const totalSize = (data.js || '').length + (data.css || '').length;
-  log('popup', `SAVE: Starting chunked save for ${host} (raw size: ${totalSize} chars)`);
-  log('popup', `SAVE: Using ${STORAGE_TYPE} storage API`);
+async function saveData(host, data, cb) {
+  try {
+    const encodedJs = encodeScript(data.js || '');
+    const encodedCss = encodeScript(data.css || '');
+    log('popup', `SAVE: Saving ${host} (encoded JS ${encodedJs.length} chars, CSS ${encodedCss.length} chars)`);
 
-  const encodedJs = encodeScript(data.js || '');
-  const encodedCss = encodeScript(data.css || '');
-  log('popup', `SAVE: Encoded JS (${encodedJs.length} chars), CSS (${encodedCss.length} chars)`);
+    const sets = {};
+    sets[`${host}_enabled`] = data.enabled;
+    sets[`${host}_modified`] = new Date().toISOString();
 
-  const sets = {};
-  const keysToDelete = [];
-  sets[`${host}_enabled`] = data.enabled;
-  sets[`${host}_modified`] = new Date().toISOString();
-  
-  // Get chunk info for potential deletion
-  chunkAndSet(`${host}_js`, encodedJs, sets);
-  chunkAndSet(`${host}_css`, encodedCss, sets);
+    chunkAndSet(`${host}_js`, encodedJs, sets);
+    chunkAndSet(`${host}_css`, encodedCss, sets);
 
-  // If we're clearing data, collect old chunk keys to delete
-  if (sets[`${host}_js_delete_marker`]) {
-    // We need to find out how many old chunks exist and delete them
-    // For now, we'll delete a reasonable range (up to 100 chunks = ~700KB)
-    for (let i = 0; i < 100; i++) {
-      keysToDelete.push(`${host}_js_${i}`);
+    // Identify what this host already has so the save replaces it cleanly.
+    const allItems = await storageApi.get(null);
+    const staleKeys = collectChunkKeys(allItems, host);
+    if (allItems[host]) staleKeys.push(host); // legacy single-key format
+    const staleItems = {};
+    staleKeys.forEach((key) => { staleItems[key] = allItems[key]; });
+    const freedBytes = estimateStoredBytes(staleItems);
+
+    // Pre-flight quota check: fail before touching existing data.
+    const quota = chrome.storage.local.QUOTA_BYTES || 10485760;
+    const bytesInUse = await getStorageBytesInUse();
+    const newBytes = estimateStoredBytes(sets);
+    const projectedBytes = bytesInUse - freedBytes + newBytes;
+
+    if (projectedBytes > quota) {
+      const freeBytes = Math.max(quota - bytesInUse + freedBytes, 0);
+      throw new Error(
+        `storage is full - this save needs ${formatBytes(newBytes)} but only ` +
+        `${formatBytes(freeBytes)} of ${formatBytes(quota)} is free. Delete unused scripts to free space.`
+      );
     }
-    delete sets[`${host}_js_delete_marker`];
-  }
-  
-  if (sets[`${host}_css_delete_marker`]) {
-    for (let i = 0; i < 100; i++) {
-      keysToDelete.push(`${host}_css_${i}`);
+
+    const numKeys = Object.keys(sets).length;
+    log('popup', `SAVE: Storing ${numKeys} keys (~${formatBytes(newBytes)}) for ${host}`);
+
+    // Write first, clean up second: a failed write never leaves the host
+    // without a script (the old chunks stay intact).
+    await storageApi.set(sets);
+
+    const leftovers = staleKeys.filter((key) => !(key in sets));
+    if (leftovers.length > 0) {
+      log('popup', `SAVE: Removing ${leftovers.length} stale keys for ${host}`);
+      await storageApi.remove(leftovers);
     }
-    delete sets[`${host}_css_delete_marker`];
-  }
 
-  const numKeys = Object.keys(sets).length;
-  const estimatedSize = JSON.stringify(sets).length;
-  log('popup', `SAVE: Preparing to store ${numKeys} keys, ~${estimatedSize} bytes total`);
-
-  if (totalSize > 100000) {
-    log('popup', 'SAVE: Large script detected (>100KB) - using chunks + base64');
-  }
-
-  // First delete old chunk keys if any, then save new data
-  const performSave = () => {
-    storageApi.set(sets, () => {
-      if (chrome.runtime.lastError) {
-        const errorMsg = chrome.runtime.lastError.message;
-        log('popup', `SAVE ERROR for ${host}: ${errorMsg}`);
-        console.error('Boost save error:', errorMsg);
-        if (cb) cb(new Error(errorMsg));
-        return;
-      }
-      log('popup', `SAVE: Chunked save complete for ${host} (${numKeys} keys stored)`);
-      lastModified = sets[`${host}_modified`];
-      if (cb) cb();
-    });
-  };
-
-  if (keysToDelete.length > 0) {
-    log('popup', `SAVE: Deleting ${keysToDelete.length} old chunk keys`);
-    storageApi.remove(keysToDelete, () => {
-      if (chrome.runtime.lastError) {
-        log('popup', `SAVE WARNING: Error deleting old chunks: ${chrome.runtime.lastError.message}`);
-      }
-      performSave();
-    });
-  } else {
-    performSave();
+    log('popup', `SAVE: Saved ${host} successfully`);
+    lastModified = sets[`${host}_modified`];
+    if (cb) cb();
+  } catch (err) {
+    console.error('Boost save error:', err);
+    if (cb) cb(err);
   }
 }
 
@@ -703,17 +720,12 @@ function loadData(host, callback) {
       return;
     }
 
-    // Handle legacy format migration
+    // Handle legacy format migration (saveData replaces the legacy key)
     if (items[host]) {
       const oldData = items[host];
       pendingJs = oldData.js || '';
       pendingCss = oldData.css || '';
-      saveData(host, oldData, (err) => {
-        if (err) callback(oldData);
-        else {
-          storageApi.remove(host, () => { callback(oldData); });
-        }
-      });
+      saveData(host, oldData, () => callback(oldData));
       return;
     }
 
@@ -837,7 +849,8 @@ function deleteScript(host, cb) {
 
     const keysToDelete = [];
     for (const key of Object.keys(allItems)) {
-      if (key === `${host}_enabled` ||
+      if (key === host ||
+          key === `${host}_enabled` ||
           key === `${host}_modified` ||
           key.startsWith(`${host}_js_`) ||
           key.startsWith(`${host}_css_`)) {
@@ -1092,8 +1105,6 @@ function loadSiteData() {
   });
 }
 
-loadSiteData();
-
 // Load version from manifest
 function loadVersion() {
   try {
@@ -1115,10 +1126,16 @@ document.querySelectorAll('.theme-option-btn').forEach(btn => {
   });
 });
 
-// Load saved theme or default to system
-storageApi.get(THEME_STORAGE_KEY, ({ [THEME_STORAGE_KEY]: savedTheme }) => {
-  const theme = savedTheme || 'system';
-  updateThemeUI(theme);
+// Copy any legacy chrome.storage.sync data, then load theme and page data.
+// Migration must finish before the first read so old scripts stay visible.
+ensureStorageMigrated().then(() => {
+  loadSiteData();
+
+  // Load saved theme or default to system
+  storageApi.get(THEME_STORAGE_KEY, ({ [THEME_STORAGE_KEY]: savedTheme }) => {
+    const theme = savedTheme || 'system';
+    updateThemeUI(theme);
+  });
 });
 
 // Keyboard shortcuts

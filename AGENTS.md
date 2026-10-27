@@ -52,14 +52,14 @@ This is a **Chrome Extension (Manifest V3)** that allows users to inject custom 
 // Good
 async function loadCode(baseKey) {
   const countKey = `${baseKey}_chunks`;
-  const { [countKey]: count = 0 } = await chrome.storage.sync.get(countKey);
+  const { [countKey]: count = 0 } = await storageApi.get(countKey);
   if (count === 0) return '';
   // ... rest
 }
 
 // Good - callback style for storage
 function loadField(baseKey, cb) {
-  chrome.storage.sync.get(`${baseKey}_chunks`, items => {
+  storageApi.get(`${baseKey}_chunks`, items => {
     const numChunks = items[`${baseKey}_chunks`] || 0;
     if (numChunks === 0) {
       cb('');
@@ -92,7 +92,7 @@ try {
 ### Storage & Data Handling
 
 **Chunked Storage Pattern:**
-Scripts are stored in chunks due to Chrome storage limits:
+Scripts are split into chunks so a single oversized value never blocks a save:
 ```javascript
 const CHUNK_SIZE = 7000;
 
@@ -101,21 +101,18 @@ const CHUNK_SIZE = 7000;
 // Enabled: `${host}_enabled`
 ```
 
-**Orion Browser Special Handling:**
-Orion on iOS has a bug where `chrome.storage.sync` and `chrome.storage.local` share the same storage space, causing data corruption and loss. The extension detects Orion and automatically switches to `chrome.storage.local` to avoid this issue.
+**Storage Strategy — `chrome.storage.local` only:**
+All script data, enabled flags and the theme live in `chrome.storage.local` (10MB in Chrome 114+). `storage.js` is the single shared storage layer, loaded by `popup.html`, `background.js` (`importScripts`) and the content script (`content_scripts.js`):
 
 ```javascript
-// Orion detection
-const isOrionBrowser = /Orion/i.test(navigator.userAgent) || 
-  (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome') && 
-   /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent));
-
-// Use local storage for Orion
-const storageApi = isOrionBrowser ? chrome.storage.local : chrome.storage.sync;
-const STORAGE_TYPE = isOrionBrowser ? 'local' : 'sync';
+const { storageApi, STORAGE_TYPE, ensureStorageMigrated } = self.BoostStorage;
 ```
 
-All three main files (popup.js, background.js, content.js) use the same `storageApi` variable to ensure consistent storage behavior across the extension.
+Never call `chrome.storage.sync` directly for script data. Desktop builds used to store scripts in sync, which is capped at ~100KB total and fails large saves with `Resource::kQuotaBytes quota exceeded`. `storage.js` performs a one-time migration that copies any legacy sync data into local (skipping logs) and records `boost_storage_migrated_v1` in local. The old sync copy is deliberately left intact as a backup (so rollback/other devices don't lose data and a wiped local store re-imports it); it is never read again once the marker is set. Every context must `await ensureStorageMigrated()` before its first read.
+
+**Why local-only:** local storage has no per-item or write-operation quota, and it is the only safe choice on Orion (iOS), where `storage.sync` and `storage.local` share one physical space. The tradeoff is that scripts no longer sync across devices.
+
+**Quota-aware saves:** `saveData()` removes only the stale chunk keys that actually exist for the host, writes the new data first, then deletes leftovers, and checks `getBytesInUse()` + `chrome.storage.local.QUOTA_BYTES` before writing so a failed save never deletes existing data.
 
 **Base64 Encoding:**
 All scripts are base64-encoded with Unicode support:
@@ -207,6 +204,7 @@ Log sources: `'popup'`, `'background'`, `'content'`
 ```
 /
 ├── manifest.json          # Extension manifest (v3)
+├── storage.js             # Shared storage layer + legacy sync migration
 ├── background.js          # Service worker - desktop injection
 ├── content.js            # Content script - mobile injection
 ├── popup.html            # Popup UI
@@ -249,6 +247,7 @@ Before releasing:
 - [ ] CSS injection works on test sites
 - [ ] Mobile detection works (test in mobile viewport)
 - [ ] Large scripts (>100KB) save/load correctly
+- [ ] Update from a version that used `chrome.storage.sync` keeps existing scripts (migration)
 - [ ] Toggle enable/disable works
 - [ ] Logs appear in log view
 - [ ] Zip file created by `zipper.ps1` loads correctly

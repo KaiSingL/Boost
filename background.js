@@ -1,19 +1,24 @@
 "use strict";
 
+importScripts('storage.js');
+
 const isMobileDevice = /Android|iPhone|iPad|iPod|Macintosh.*(iPhone|iPad)/i.test(navigator.userAgent);
 
-// Orion Browser Detection and Storage Strategy
-// Orion has a bug where storage.sync and storage.local share the same space
-// causing data corruption. We use storage.local for Orion to avoid this.
-const isOrionBrowser = /Orion/i.test(navigator.userAgent) || 
-  (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome') && 
-   /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent));
+// Shared storage layer: chrome.storage.local for every browser (see storage.js).
+const { storageApi, STORAGE_TYPE, ensureStorageMigrated } = self.BoostStorage;
 
-// Use local storage for Orion to avoid sync/local collision bug
-const storageApi = isOrionBrowser ? chrome.storage.local : chrome.storage.sync;
-const STORAGE_TYPE = isOrionBrowser ? 'local' : 'sync';
+console.log(`Boost background: Using ${STORAGE_TYPE} storage`);
 
-console.log(`Boost background: Using ${STORAGE_TYPE} storage${isOrionBrowser ? ' (Orion detected)' : ''}`);
+// Migrate legacy chrome.storage.sync data on install/update and browser startup.
+chrome.runtime.onInstalled.addListener(() => {
+  ensureStorageMigrated().then((migrated) => {
+    if (migrated) log('background', 'Migrated legacy sync storage to local storage');
+  });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  ensureStorageMigrated();
+});
 
 const MAX_LOGS = 500;
 
@@ -139,6 +144,9 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   }
 
   log('background', `Injection check for ${hostname} (enabled key: ${hostname}_enabled)`);
+
+  // Make sure legacy sync data has been copied into local before reading.
+  await ensureStorageMigrated();
 
   const enabledKey = `${hostname}_enabled`;
   const enabledRes = await storageApi.get(enabledKey);
