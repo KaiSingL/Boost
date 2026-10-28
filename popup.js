@@ -66,6 +66,7 @@ const clearBtn = document.getElementById('clear-btn');
 const logPre = document.getElementById('log-pre');
 const logBtn = document.getElementById('log-btn');
 const manageBtn = document.getElementById('manage-btn');
+const reloadExtBtn = document.getElementById('reload-ext-btn');
 
 // Scripts list elements
 const scriptsList = document.getElementById('scripts-list');
@@ -500,6 +501,12 @@ editBtn.addEventListener('click', () => { returnView = 'landing'; showEditor(); 
 createBtn.addEventListener('click', () => { returnView = 'landing'; showEditor(); });
 logBtn.addEventListener('click', showLog);
 manageBtn.addEventListener('click', showScriptsList);
+
+// Restart the whole extension (service worker + extension pages). The popup
+// is torn down by the reload, so the log write is awaited first.
+reloadExtBtn.addEventListener('click', () => {
+  log('popup', 'Reloading extension').then(() => chrome.runtime.reload());
+});
 clearBtn.addEventListener('click', clearLogs);
 
 toggleBtn.addEventListener('click', () => {
