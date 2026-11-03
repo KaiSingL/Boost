@@ -1,0 +1,122 @@
+name: Package
+
+# Builds the extension zip and, for version tags, publishes a GitHub Release.
+#
+# Automatic: push a tag like v2.5.7 -> builds Boost-v2.5.7.zip and creates the release.
+#   The tag must match the "version" in manifest.json (guarded below).
+# Manual:    run this workflow from the Actions tab. Leave "tag" empty to build
+#   the current HEAD as an artifact only, or fill in an existing tag (e.g.
+#   "v2.5.6") to package and release that exact tag again.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to package & release (e.g. v2.5.6). Empty = build HEAD only.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide release tag
+        id: tag
+        run: |
+          tag=""
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            # Manual run that re-releases an existing tag.
+            tag="${{ inputs.tag }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # For a tag push this is the tag itself; for a manual run it is the
+          # optional tag input (exact historical content) or the branch.
+          ref: ${{ steps.tag.outputs.tag || github.ref }}
+
+      - name: Read version from manifest.json
+        id: ver
+        run: echo "version=$(node -p "require('./manifest.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Guard - tag must match manifest version
+        if: steps.tag.outputs.tag != ''
+        env:
+          EXPECTED: v${{ steps.ver.outputs.version }}
+          ACTUAL: ${{ steps.tag.outputs.tag }}
+        run: |
+          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+            echo "::error::Tag '${ACTUAL}' does not match manifest.json version (expected '${EXPECTED}'). Fix the tag or bump manifest.json."
+            exit 1
+          fi
+          echo "Tag '${ACTUAL}' matches manifest.json version '${EXPECTED}'."
+
+      - name: Package zip
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          zip_file="Boost-v${VERSION}.zip"
+          echo "Packaging ${zip_file}"
+          # The GitHub-hosted ubuntu runners ship zsh; bash is the fallback since
+          # zipper.zsh is written to be compatible with both interpreters.
+          if command -v zsh >/dev/null 2>&1; then
+            zsh zipper.zsh -o "$zip_file"
+          else
+            bash zipper.zsh -o "$zip_file"
+          fi
+          test -f "$zip_file"
+
+      - name: Verify zip contents
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          zip_file="Boost-v${VERSION}.zip"
+          tmp="${RUNNER_TEMP}/verify"
+          rm -rf "$tmp"
+          unzip -q "$zip_file" -d "$tmp"
+          # manifest.json must sit at the zip root so the archive can be loaded
+          # directly via "Load unpacked"/Web Store upload.
+          test -f "$tmp/manifest.json"
+          if unzip -l "$zip_file" | grep -Eq "UI_STYLE_GUIDE\.md|examples|\.github|\.git"; then
+            echo "::error::Development files leaked into ${zip_file}:"
+            unzip -l "$zip_file"
+            exit 1
+          fi
+          echo "OK: manifest.json at zip root, no development files inside."
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Boost-v${{ steps.ver.outputs.version }}.zip
+          path: Boost-v${{ steps.ver.outputs.version }}.zip
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: steps.tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          zip_file="Boost-v${VERSION}.zip"
+          # Idempotent: if the release already exists, just (re)upload the asset.
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists; replacing asset."
+          else
+            gh release create "${RELEASE_TAG}" --title "${RELEASE_TAG}" --generate-notes
+          fi
+          gh release upload "${RELEASE_TAG}" "$zip_file" --clobber
+          gh release view "${RELEASE_TAG}"

@@ -81,12 +81,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ====================== Logging Helpers ======================
+# if-form instead of `(( verbose )) && cmd`: under `set -e` the short-circuit
+# form makes the helper return non-zero when verbose=0, which zsh and bash
+# handle differently. The if-form keeps the exit status 0 in both shells, so
+# the script can be run with either interpreter.
 debug() {
-    (( verbose )) && printf "[DEBUG] %s\n" "$*" >&2
+    if (( verbose )); then
+        printf "[DEBUG] %s\n" "$*" >&2
+    fi
 }
 
 info() {
-    (( verbose )) && printf "[INFO] %s\n" "$*" >&2
+    if (( verbose )); then
+        printf "[INFO] %s\n" "$*" >&2
+    fi
 }
 
 # ====================== Main Process ======================
@@ -108,11 +116,17 @@ fi
 # - The output archive (safety)
 exclusions=(
     ".gitignore"
+    ".git"
     ".git/*"
+    ".github"
+    ".github/*"
+    ".gitattributes"
     "README.md"
     "AGENTS.md"
+    "UI_STYLE_GUIDE.md"
     "zipper.zsh"
     "zipper.ps1"
+    "examples"
     "examples/*"
     ".DS_Store"
     "*/.DS_Store"

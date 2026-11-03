@@ -20,7 +20,11 @@ $exclusions = @(
     "README.md",
     "AGENTS.md", 
     "zipper.zsh", 
-    "zipper.ps1"
+    "zipper.ps1",
+    ".git",
+    ".github",
+    ".gitattributes",
+    "UI_STYLE_GUIDE.md"
 )
 
 Write-Host "DEBUG: Exclusions: $($exclusions -join ', ')" -ForegroundColor Green
