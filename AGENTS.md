@@ -230,13 +230,37 @@ Log sources: `'popup'`, `'background'`, `'content'`
 // See: https://developer.chrome.com/docs/extensions/mv3/content_scripts/
 ```
 
-### Version Management
+## Release Process
 
-Update version in `manifest.json` following semver:
-```json
-{
-  "version": "2.2.0"
-}
+The version lives in `manifest.json` (semver: minor for new features, patch
+for fixes since the last release). The popup footer label reads it at runtime
+via `chrome.runtime.getManifest()` — never hardcode it. Do not bump the
+version in feature/fix commits; the release commit is the only place it changes.
+
+Release steps (matching commits `v2.5.6`, `v2.6.0`):
+1. Set `"version"` in `manifest.json` — the only file the release commit touches
+2. Commit with the exact message `vX.Y.Z` (no type/scope, manifest-only)
+3. Annotated tag with a one-line summary of what ships:
+   ```powershell
+   git tag -a vX.Y.Z -m "vX.Y.Z: <one-line summary>"
+   ```
+4. Push the branch and the tag together:
+   ```powershell
+   git push origin main vX.Y.Z
+   ```
+
+The tag push triggers `.github/workflows/package.yml`, which:
+- Fails if the tag doesn't match the `manifest.json` version
+- Builds `Boost-vX.Y.Z.zip` via `zipper.zsh` (manifest at zip root, no dev files)
+- Uploads the artifact and creates the GitHub Release with auto-generated notes
+
+Smoke-test the workflow without releasing: `gh workflow run Package --ref main`
+(empty tag builds HEAD as an artifact only; filling a tag re-packages that release).
+
+Verify with:
+```powershell
+gh run watch <run-id> --exit-status
+gh release view vX.Y.Z
 ```
 
 ## Testing Checklist
@@ -248,6 +272,7 @@ Before releasing:
 - [ ] Mobile detection works (test in mobile viewport)
 - [ ] Large scripts (>100KB) save/load correctly
 - [ ] Update from a version that used `chrome.storage.sync` keeps existing scripts (migration)
+- [ ] Release tag matches manifest.json version and workflow run is green
 - [ ] Toggle enable/disable works
 - [ ] Logs appear in log view
 - [ ] Zip file created by `zipper.ps1` loads correctly
