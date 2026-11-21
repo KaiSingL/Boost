@@ -773,7 +773,7 @@ body.dark-theme .CodeMirror-gutter-background {
 
 /* Log button in footer - compact style */
 .version-footer .log-btn {
-  height: 24px;
+  height: 32px;
   padding: 0 8px;
   font-size: 10px;
   background: transparent;
@@ -803,24 +803,20 @@ body.dark-theme .CodeMirror-gutter-background {
 
 /* Icon-only footer button (reload extension) */
 .version-footer .log-btn.icon-btn {
-  width: 24px;
-  padding: 0;
-}
-
-body.mobile .version-footer .log-btn.icon-btn {
-  width: 22px;
+  width: 32px;
   padding: 0;
 }
 
 body.mobile .version-footer {
   padding: 10px 12px;
   font-size: 10px;
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 
 body.mobile .version-footer .log-btn {
-  height: 22px;
-  padding: 0 6px;
-  font-size: 9px;
+  padding: 0 10px;
+  font-size: 10px;
 }
 
 /* Theme Segmented Control */
@@ -832,8 +828,9 @@ body.mobile .version-footer .log-btn {
   background: var(--bg-input);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  padding: 2px;
+  padding: 3px;
   gap: 2px;
+  height: 32px;
 }
 
 .theme-option-btn {
@@ -873,8 +870,8 @@ body.mobile .version-footer .log-btn {
 
 .theme-knob {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 3px;
+  left: 3px;
   width: calc(33.333% - 2px);
   height: 24px;
   background: var(--bg-panel);
@@ -894,20 +891,14 @@ body.dark-theme .theme-knob {
 }
 
 body.mobile .theme-segmented-control {
-  height: 32px;
-  padding: 3px;
-  box-sizing: border-box;
-}
-
-body.mobile .theme-option-btn {
-  height: 26px;
-  min-height: 26px;
-  padding: 0;
-  -webkit-appearance: none;
-  appearance: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  /* Normal flex item: wraps onto its own full-width row below the footer buttons.
+     Must stay "relative" (not static) so the knob keeps this control as its
+     containing block for absolute positioning. */
+  position: relative;
+  left: auto;
+  transform: none;
+  order: 3;
+  flex-basis: 100%;
 }
 
 body.mobile .theme-option-btn svg {
@@ -915,13 +906,6 @@ body.mobile .theme-option-btn svg {
   height: 16px;
   display: block;
   margin: auto;
-}
-
-body.mobile .theme-knob {
-  top: 3px;
-  left: 3px;
-  height: 26px;
-  box-sizing: border-box;
 }
 
 /* Orion iOS specific fixes */
