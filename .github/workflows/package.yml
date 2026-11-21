@@ -42,7 +42,7 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # For a tag push this is the tag itself; for a manual run it is the
           # optional tag input (exact historical content) or the branch.
@@ -98,7 +98,7 @@ jobs:
           echo "OK: manifest.json at zip root, no development files inside."
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Boost-v${{ steps.ver.outputs.version }}.zip
           path: Boost-v${{ steps.ver.outputs.version }}.zip
